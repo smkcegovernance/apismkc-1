@@ -11,33 +11,41 @@ namespace SmkcApi.Security
 {
     public class ApiKeyAuthenticationHandler : DelegatingHandler
     {
-        private static readonly HashSet<string> ValidApiKeys = new HashSet<string>
+        // Development test keys
+        private static readonly HashSet<string> TestApiKeys = new HashSet<string>
         {
-            // Production API Keys
-            "BANK001_4f8b2c7d9e3a1f6b8c5d0e9a2f7b4c8d1e6f9a3b7c2d5e8f0a9b6c3d7e1f4a8b5",
-            "BANK002_9c6f3a8e1d4b7c0f2e5a8b1c4d7f0a3e6b9c2d5f8a1b4c7e0d3f6a9b2c5d8e1f4",
-            
-            // Test API Keys for localhost development
             "TEST_API_KEY_12345678901234567890123456789012",
             "DEV_API_KEY_ABCDE67890FGHIJ12345KLMNO67890",
             "ADMIN_API_KEY_XYZ12345678901234567890ABC456"
         };
 
-        private static readonly Dictionary<string, string> ApiKeySecrets = new Dictionary<string, string>
+        private static readonly Dictionary<string, string> TestApiKeySecrets = new Dictionary<string, string>
         {
-            // Production secrets
-            ["BANK001_4f8b2c7d9e3a1f6b8c5d0e9a2f7b4c8d1e6f9a3b7c2d5e8f0a9b6c3d7e1f4a8b5"] = 
-                "S3cur3K3y!B4nk001#2024$Pr0d&V3ryL0ngS3cr3tK3yF0rB4nk1ng",
-            ["BANK002_9c6f3a8e1d4b7c0f2e5a8b1c4d7f0a3e6b9c2d5f8a1b4c7e0d3f6a9b2c5d8e1f4"] = 
-                "An0th3rS3cur3K3y!B4nk002#2024$V3ryS3cr3tK3yF0rB4nk2ng",
-            
-            // Test secrets for localhost development
-            ["TEST_API_KEY_12345678901234567890123456789012"] = 
-                "TEST_SECRET_KEY_67890ABCDEFGHIJ1234567890",
-            ["DEV_API_KEY_ABCDE67890FGHIJ12345KLMNO67890"] = 
-                "DEV_SECRET_KEY_FGHIJ67890KLMNO12345PQRST",
-            ["ADMIN_API_KEY_XYZ12345678901234567890ABC456"] = 
-                "ADMIN_SECRET_KEY_ABC45678901234567890DEF"
+            ["TEST_API_KEY_12345678901234567890123456789012"] = "TEST_SECRET_KEY_67890ABCDEFGHIJ1234567890",
+            ["DEV_API_KEY_ABCDE67890FGHIJ12345KLMNO67890"] = "DEV_SECRET_KEY_FGHIJ67890KLMNO12345PQRST",
+            ["ADMIN_API_KEY_XYZ12345678901234567890ABC456"] = "ADMIN_SECRET_KEY_ABC45678901234567890DEF",
+            ["BOOTH_API_KEY_12345678901234567890123456789012"] = "BOOTH_SECRET_KEY_67890ABCDEFGHIJ1234567890"
+        };
+
+        // Public endpoints that don't require authentication
+        private static readonly string[] PublicEndpoints = new[]
+        {
+            "/api/auth/login",              // Unified login endpoint
+            "/api/auth/bank/login",
+            "/api/auth/account/login",
+            "/api/auth/commissioner/login",
+            "/api/booth/login",             // Booth Mapping login endpoint
+            "/api/ftp-diagnostic/network-info",  // FTP diagnostic endpoints
+            "/api/ftp-diagnostic/config",
+            "/api/ftp-diagnostic/test",
+            "/api/deposits/consent/health",      // Consent document endpoints (plain access)
+            "/api/deposits/consent/downloadconsent",
+            "/api/deposits/consent/documentconsent",  // POST upload endpoint
+            "/api/deposits/consent/info",
+            "/api/deposits/consent/googledrive/health",      // Google Drive consent endpoints (plain access)
+            "/api/deposits/consent/googledrive/upload",
+            "/api/deposits/consent/googledrive/download",
+            "/api/deposits/consent/googledrive/info"
         };
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -47,6 +55,14 @@ namespace SmkcApi.Security
                 // Skip authentication for OPTIONS requests (CORS preflight)
                 if (request.Method == HttpMethod.Options)
                 {
+                    return await base.SendAsync(request, cancellationToken);
+                }
+
+                // Skip authentication for public endpoints (login routes)
+                var requestPath = request.RequestUri.AbsolutePath.ToLowerInvariant();
+                if (IsPublicEndpoint(requestPath))
+                {
+                    LogSecurityEvent($"Public endpoint accessed: {requestPath}");
                     return await base.SendAsync(request, cancellationToken);
                 }
 
@@ -76,8 +92,9 @@ namespace SmkcApi.Security
                     return CreateUnauthorizedResponse("Invalid API Key format");
                 }
 
-                // Validate API key exists
-                if (!ValidApiKeys.Contains(apiKey))
+                // Get secret key - check Web.config first, then test keys
+                string secretKey = GetSecretKeyForApiKey(apiKey);
+                if (secretKey == null)
                 {
                     LogSecurityEvent($"Invalid API Key attempted: {SecurityHelper.MaskSensitiveData(apiKey)}");
                     return CreateUnauthorizedResponse("Invalid API Key");
@@ -97,20 +114,45 @@ namespace SmkcApi.Security
                     requestBody = await request.Content.ReadAsStringAsync();
                 }
 
-                // Validate signature
-                var secretKey = ApiKeySecrets[apiKey];
+                // SERVER-SIDE SIGNATURE CALCULATION
+                var httpMethod = request.Method.Method;
+                var requestUri = request.RequestUri.PathAndQuery;
+                
+                // DETAILED DEBUG LOGGING
+                var debugInfo = new System.Text.StringBuilder();
+                debugInfo.AppendLine("=== SERVER SIGNATURE CALCULATION ===");
+                debugInfo.AppendLine($"HTTP Method: {httpMethod}");
+                debugInfo.AppendLine($"Request URI: {requestUri}");
+                debugInfo.AppendLine($"Request Body: {(string.IsNullOrEmpty(requestBody) ? "(empty)" : requestBody.Substring(0, Math.Min(100, requestBody.Length)))}");
+                debugInfo.AppendLine($"Timestamp: {timestamp}");
+                debugInfo.AppendLine($"API Key: {SecurityHelper.MaskSensitiveData(apiKey)}");
+                
+                // Create string to sign (EXACTLY as documented)
+                var stringToSign = $"{httpMethod.ToUpper()}{requestUri}{requestBody}{timestamp}{apiKey}";
+                debugInfo.AppendLine($"String to Sign: {stringToSign.Substring(0, Math.Min(200, stringToSign.Length))}...");
+                
+                // Calculate expected signature
                 var expectedSignature = SecurityHelper.CreateRequestSignature(
-                    request.Method.Method,
-                    request.RequestUri.PathAndQuery,
+                    httpMethod,
+                    requestUri,
                     requestBody,
                     timestamp,
                     apiKey,
                     secretKey
                 );
+                
+                debugInfo.AppendLine($"Expected Signature: {expectedSignature}");
+                debugInfo.AppendLine($"Received Signature: {signature}");
+                debugInfo.AppendLine($"Signatures Match: {signature == expectedSignature}");
+                debugInfo.AppendLine("=====================================");
+                
+                // Log the debug info
+                System.Diagnostics.Trace.TraceInformation(debugInfo.ToString());
 
                 if (signature != expectedSignature)
                 {
                     LogSecurityEvent($"Invalid signature from API Key: {SecurityHelper.MaskSensitiveData(apiKey)}");
+                    LogSecurityEvent($"SIGNATURE MISMATCH DETAILS:\n{debugInfo}");
                     return CreateUnauthorizedResponse("Invalid signature");
                 }
 
@@ -124,9 +166,51 @@ namespace SmkcApi.Security
             }
             catch (Exception ex)
             {
-                LogSecurityEvent($"Authentication error: {ex.Message}");
+                LogSecurityEvent($"Authentication error: {ex.Message}\n{ex.StackTrace}");
                 return CreateUnauthorizedResponse("Authentication failed");
             }
+        }
+
+        /// <summary>
+        /// Check if the request path is a public endpoint that doesn't require authentication
+        /// </summary>
+        private bool IsPublicEndpoint(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            // Check if path matches any public endpoint
+            return PublicEndpoints.Any(endpoint => path.Equals(endpoint, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Get secret key for API key from Web.config or test keys
+        /// Checks Web.config first (production), then test keys (development)
+        /// </summary>
+        private string GetSecretKeyForApiKey(string apiKey)
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+                return null;
+
+            // Check Web.config for production keys
+            var configApiKey = ConfigurationManager.AppSettings["ApiKey"];
+            var configSecret = ConfigurationManager.AppSettings["ApiSecret"];
+            
+            if (!string.IsNullOrWhiteSpace(configApiKey) && 
+                !string.IsNullOrWhiteSpace(configSecret) &&
+                configApiKey == apiKey &&
+                !configApiKey.StartsWith("CHANGE_ME"))
+            {
+                return configSecret;
+            }
+
+            // Check test keys for development
+            if (TestApiKeySecrets.ContainsKey(apiKey))
+            {
+                return TestApiKeySecrets[apiKey];
+            }
+
+            return null;
         }
 
         private HttpResponseMessage CreateUnauthorizedResponse(string message)

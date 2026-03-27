@@ -14,7 +14,6 @@ namespace SmkcApi.Controllers
     /// </summary>
     [RoutePrefix("api/voters")]
     [ShaAuthentication]
-    [IPWhitelist]
     [RateLimit(maxRequests: 100, timeWindowMinutes: 1)]
     public class VotersController : ApiController
     {

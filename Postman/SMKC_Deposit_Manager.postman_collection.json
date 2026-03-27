@@ -1,0 +1,455 @@
+{
+  "info": {
+    "name": "SMKC Deposit Management System",
+    "_postman_id": "deposit-manager-collection-001",
+    "description": "Complete Postman collection for SMKC Deposit Manager with HMAC-SHA256 authentication. Both AccountController and BankController verified working.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// =================================",
+          "// CLIENT SIGNATURE GENERATION",
+          "// FIXED: Properly resolve variables before signing",
+          "// =================================",
+          "",
+          "// Generate Unix timestamp (seconds)",
+          "const timestamp = Math.floor(Date.now() / 1000).toString();",
+          "",
+          "// Request body (empty for GET)",
+          "let requestBody = '';",
+          "if (pm.request && pm.request.body && pm.request.body.mode === 'raw' && pm.request.body.raw) {",
+          "  requestBody = pm.request.body.raw;",
+          "}",
+          "",
+          "// Credentials",
+          "const apiKey = pm.variables.get('apiKey') || pm.environment.get('apiKey');",
+          "const secretKey = pm.variables.get('secretKey') || pm.environment.get('secretKey');",
+          "",
+          "// Method",
+          "const httpMethod = pm.request.method.toUpperCase();",
+          "",
+          "// IMPORTANT: Get the RESOLVED URL (with variables replaced)",
+          "// Build the URL manually to ensure variables are resolved",
+          "let requestUri = pm.request.url.getPath();",
+          "",
+          "// Add query parameters if present",
+          "const queryParams = pm.request.url.query.all();",
+          "if (queryParams && queryParams.length > 0) {",
+          "  const queryString = queryParams",
+          "    .filter(param => !param.disabled)",
+          "    .map(param => param.key + '=' + param.value)",
+          "    .join('&');",
+          "  if (queryString) {",
+          "    requestUri += '?' + queryString;",
+          "  }",
+          "}",
+          "",
+          "// DETAILED DEBUG LOGGING",
+          "console.log('=== CLIENT SIGNATURE GENERATION ===');",
+          "console.log('HTTP Method:', httpMethod);",
+          "console.log('Request URI:', requestUri);",
+          "console.log('Request Body:', requestBody || '(empty)');",
+          "console.log('Timestamp:', timestamp);",
+          "console.log('API Key:', apiKey ? apiKey.substring(0, 10) + '...' : 'MISSING');",
+          "",
+          "// Check for unresolved variables BEFORE signing",
+          "if (requestUri.includes('{{') || requestUri.includes('}}')) {",
+          "  console.error('⚠️ CRITICAL ERROR: Unresolved variable detected in URI!');",
+          "  console.error('URI contains:', requestUri);",
+          "  console.error('This will cause signature mismatch!');",
+          "  console.error('Make sure environment is selected and variables are set!');",
+          "}",
+          "",
+          "// String to sign: METHOD + URI + BODY + TIMESTAMP + APIKEY",
+          "const stringToSign = httpMethod + requestUri + requestBody + timestamp + apiKey;",
+          "console.log('String to Sign:', stringToSign.substring(0, 200) + '...');",
+          "console.log('String to Sign Length:', stringToSign.length);",
+          "",
+          "// Calculate HMAC-SHA256 signature",
+          "const signature = CryptoJS.HmacSHA256(stringToSign, secretKey).toString(CryptoJS.enc.Base64);",
+          "console.log('Generated Signature:', signature);",
+          "console.log('=====================================');",
+          "",
+          "// Set variables",
+          "pm.variables.set('timestamp', timestamp);",
+          "pm.variables.set('signature', signature);"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:57031" },
+    { "key": "apiKey", "value": "TEST_API_KEY_12345678901234567890123456789012" },
+    { "key": "secretKey", "value": "TEST_SECRET_KEY_67890ABCDEFGHIJ1234567890" },
+    { "key": "requirementId", "value": "REQ0000000003" },
+    { "key": "bankId", "value": "BANK-001" },
+    { "key": "timestamp", "value": "" },
+    { "key": "signature", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Login APIs (Public - No Auth)",
+      "item": [
+        {
+          "name": "Unified Login (Returns ROLE_ID)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"BANK001\",\n  \"password\": \"Password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","auth","login"]
+            },
+            "description": "Unified login for all user types (Bank, Account, Commissioner). Returns ROLE_ID: 1=Commissioner, 2=Account, 3=Bank."
+          }
+        },
+        {
+          "name": "Bank Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"testbank\",\n  \"password\": \"Password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/bank/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","auth","bank","login"]
+            }
+          }
+        },
+        {
+          "name": "Account Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"testaccount\",\n  \"password\": \"Password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/account/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","auth","account","login"]
+            }
+          }
+        },
+        {
+          "name": "Commissioner Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"testcommissioner\",\n  \"password\": \"Password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/commissioner/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","auth","commissioner","login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bank APIs",
+      "item": [
+        {
+          "name": "Get Published Requirements",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/bank/requirements?status=published",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","bank","requirements"],
+              "query": [{"key": "status", "value": "published"}]
+            }
+          }
+        },
+        {
+          "name": "Get Requirement Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/bank/requirements/{{requirementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","bank","requirements","{{requirementId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Bank Quotes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/bank/quotes?bankId={{bankId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","bank","quotes"],
+              "query": [{"key": "bankId", "value": "{{bankId}}"}]
+            }
+          }
+        },
+        {
+          "name": "Submit Quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirementId\": \"{{requirementId}}\",\n  \"bankId\": \"{{bankId}}\",\n  \"interestRate\": 7.5,\n  \"remarks\": \"Best competitive rate\",\n  \"consentDocument\": {\n    \"fileName\": \"consent.pdf\",\n    \"fileData\": \"base64_encoded_data_here\",\n    \"fileSize\": 123456,\n    \"uploadedAt\": \"2025-01-14T12:00:00Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/bank/quotes/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","bank","quotes","submit"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Account Department APIs",
+      "item": [
+        {
+          "name": "Get All Requirements",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/account/requirements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","account","requirements"]
+            }
+          }
+        },
+        {
+          "name": "Get Requirement Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/account/requirements/{{requirementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","account","requirements","{{requirementId}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Requirement",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schemeName\": \"Fixed Deposit - High Value\",\n  \"depositType\": \"callable\",\n  \"amount\": 10000000,\n  \"depositPeriod\": 12,\n  \"validityPeriod\": \"2025-12-31T23:59:59Z\",\n  \"description\": \"High value fixed deposit for municipal funds\",\n  \"createdBy\": \"ACC-USER-001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/account/requirements/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","account","requirements","create"]
+            }
+          }
+        },
+        {
+          "name": "Get All Banks",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/account/banks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","account","banks"]
+            }
+          }
+        },
+        {
+          "name": "Register Bank",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"State Bank of India\",\n  \"branchAddress\": \"Main Branch, City Center\",\n  \"address\": \"123 City Center Road, Mumbai\",\n  \"micr\": \"400002001\",\n  \"ifsc\": \"SBIN0000123\",\n  \"email\": \"deposits@sbi.co.in\",\n  \"contactPerson\": \"Mr. Banking Officer\",\n  \"contactNo\": \"022-12345678\",\n  \"phone\": \"9876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/account/banks/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","account","banks","create"]
+            }
+          }
+        },
+        {
+          "name": "Get All Quotes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/account/quotes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","account","quotes"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Commissioner APIs",
+      "item": [
+        {
+          "name": "Get Requirements for Review",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/commissioner/requirements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","commissioner","requirements"]
+            }
+          }
+        },
+        {
+          "name": "Get Requirement with Quotes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/commissioner/requirements/{{requirementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","commissioner","requirements","{{requirementId}}"]
+            }
+          }
+        },
+        {
+          "name": "Authorize Requirement",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"commissionerId\": \"COM-001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/commissioner/requirements/{{requirementId}}/authorize",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","commissioner","requirements","{{requirementId}}","authorize"]
+            }
+          }
+        },
+        {
+          "name": "Finalize Deposit",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bankId\": \"{{bankId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/commissioner/requirements/{{requirementId}}/finalize",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","commissioner","requirements","{{requirementId}}","finalize"]
+            }
+          }
+        },
+        {
+          "name": "Get All Quotes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-Timestamp", "value": "{{timestamp}}" },
+              { "key": "X-Signature", "value": "{{signature}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/deposits/commissioner/quotes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","deposits","commissioner","quotes"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

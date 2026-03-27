@@ -17,6 +17,8 @@ namespace SmkcApi.Repositories
         Task<ProcBillDto> GetBillViaProcAsync(string consumerNo);
         Task<List<ConnectionBalanceMobileDto>> GetConnectionBalanceWithMobileAsync(
            long connectionNo = 0, string wardCode = "0", string divCode = "0");
+        Task<List<WaterBillSmsDto>> GetWaterBillSmsDataAsync(
+           long connectionNo = 0, string wardCode = "0", string divCode = "0");
         Task LogSmsToOracleAsync(
             string connectionNo,
             string mobileNo,
@@ -33,6 +35,7 @@ namespace SmkcApi.Repositories
 
         private readonly IOracleConnectionFactory _factory;
         public WaterRepository(IOracleConnectionFactory factory) { _factory = factory; }
+
         public async Task<List<ConnectionBalanceMobileDto>> GetConnectionBalanceWithMobileAsync(
            long connectionNo = 0, string wardCode = "0", string divCode = "0")
         {
@@ -306,8 +309,8 @@ namespace SmkcApi.Repositories
                     var rawName = S("CustomerName");
                     var rawAddr = S("CustomerAddress");
 
-                    var nameUni = IsmMarathiConverter.ConvertIfLegacy(rawName);
-                    var addrUni = IsmMarathiConverter.ConvertIfLegacy(rawAddr);
+                    var nameUni = NetIsmConverter.ConvertIfNeeded(rawName);
+                    var addrUni = NetIsmConverter.ConvertIfNeeded(rawAddr);
 
 
                     var dto = new ProcBillDto
@@ -360,7 +363,7 @@ namespace SmkcApi.Repositories
         {
             try
             {
-                using (var conn = _factory.Create())
+                using (var conn = _factory.CreateWS())
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "PROC_LOG_SMS_ACTIVITY";
@@ -388,6 +391,65 @@ namespace SmkcApi.Repositories
                 System.Diagnostics.Trace.TraceError($"[WaterRepository] Failed to log SMS: {ex}");
             }
         }
+
+        // New method to get water bill SMS data with customer name and due date
+        public async Task<List<WaterBillSmsDto>> GetWaterBillSmsDataAsync(
+            long connectionNo = 0, string wardCode = "0", string divCode = "0")
+        {
+            var results = new List<WaterBillSmsDto>();
+
+            using (var conn = _factory.CreateWS())
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.BindByName = true;
+                cmd.CommandText = "PROC_GET_WS_SMS_PAYLOAD"; // stored procedure from your screenshot
+                cmd.CommandType = System.Data.CommandType.StoredProcedure;
+
+                cmd.Parameters.Add("p_result", OracleDbType.RefCursor, System.Data.ParameterDirection.Output);
+                cmd.Parameters.Add("p_current_finyr", OracleDbType.Varchar2).Value = "2025-2026"; // or get from config
+                cmd.Parameters.Add("p_current_bc_code", OracleDbType.Varchar2).Value = "18"; // or get from config
+                cmd.Parameters.Add("p_payment_url", OracleDbType.Varchar2).Value = "https://tinyurl.com/ye89wuk3";
+                cmd.Parameters.Add("p_ws_connno", OracleDbType.Int64).Value = connectionNo;
+                cmd.Parameters.Add("p_ward_code", OracleDbType.Varchar2).Value = wardCode;
+                cmd.Parameters.Add("p_div_code", OracleDbType.Varchar2).Value = divCode;
+                cmd.Parameters.Add("p_only_with_mobile", OracleDbType.Varchar2).Value = "y";
+
+                await conn.OpenAsync();
+
+                using (var reader = await cmd.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        var mobile = reader["mobile_number"] == DBNull.Value ? null : reader["mobile_number"].ToString();
+                        if (string.IsNullOrWhiteSpace(mobile))
+                            continue; // Skip rows without mobile
+
+                        var customerName = reader["customer_name"] == DBNull.Value ? "" : reader["customer_name"].ToString();
+                        
+                        // Format due date as dd/MM/yyyy without time
+                        string dueDate = "";
+                        if (!(reader["due_date"] is DBNull))
+                        {
+                            var dueDateValue = Convert.ToDateTime(reader["due_date"], CultureInfo.InvariantCulture);
+                            dueDate = dueDateValue.ToString("dd/MM/yyyy");
+                        }
+                        
+                        results.Add(new WaterBillSmsDto
+                        {
+                            ConnectionNumber = reader["connection_no"]?.ToString(),
+                            CustomerName = NetIsmConverter.ConvertIfNeeded(customerName),
+                            MobileNumber = mobile,
+                            TotalAmount = reader["total_amount"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["total_amount"]),
+                            DueDate = dueDate,
+                            PaymentUrl = reader["payment_url"]?.ToString()
+                        });
+                    }
+                }
+            }
+
+            return results;
+        }
+
         // Detects legacy mojibake (non-ASCII and not already Devanagari), then converts to Unicode Marathi
         private static string ConvertIfLegacy(string s)
         {
@@ -407,7 +469,7 @@ namespace SmkcApi.Repositories
                     break;
                 }
             }
-            return hasHighLatin ? LegacyIndicConverter.ToUnicodeMarathi(s) : s;
+            return hasHighLatin ? DvbwConverter.Convert(s) : s;
         }
     }
 

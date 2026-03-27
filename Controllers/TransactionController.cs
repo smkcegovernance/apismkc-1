@@ -10,7 +10,6 @@ namespace SmkcApi.Controllers
 {
     [RoutePrefix("api/transactions")]
     [ShaAuthentication]
-    [IPWhitelist]
     [RateLimit(maxRequests: 200, timeWindowMinutes: 1)]
     public class TransactionController : ApiController
     {

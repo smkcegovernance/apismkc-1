@@ -1,0 +1,825 @@
+{
+	"info": {
+		"_postman_id": "booth-mapping-api-collection",
+		"name": "Booth Mapping API - Complete Collection",
+		"description": "Complete Postman collection for testing Booth Mapping Application API with HMAC-SHA256 authentication\n\n**Features:**\n- User authentication (ULBERP schema)\n- Booth statistics (WEBSITE schema)\n- Booth listing and search\n- GPS location updates\n- Bilingual support (Hindi + English)\n- SHA-256 HMAC signature authentication\n\n**Base URL:** http://localhost:5000/api/booth\n\n**Authentication:** \n- Public endpoint: POST /login (no auth)\n- Protected endpoints: SHA-256 signature (X-API-Key, X-Timestamp, X-Signature headers)\n\n**Created:** January 2025\n**Version:** 2.0 (Updated with SHA-256 Auth)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// =================================",
+					"// SHA-256 HMAC SIGNATURE GENERATION",
+					"// =================================",
+					"",
+					"// Skip signature for login endpoint (public)",
+					"const currentUrl = pm.request.url.toString();",
+					"if (currentUrl.includes('/login')) {",
+					"    console.log('Login endpoint - skipping signature generation');",
+					"    return;",
+					"}",
+					"",
+					"// Generate Unix timestamp (seconds)",
+					"const timestamp = Math.floor(Date.now() / 1000).toString();",
+					"",
+					"// Request body (empty for GET)",
+					"let requestBody = '';",
+					"if (pm.request && pm.request.body && pm.request.body.mode === 'raw' && pm.request.body.raw) {",
+					"  requestBody = pm.request.body.raw;",
+					"}",
+					"",
+					"// Credentials",
+					"const apiKey = pm.variables.get('apiKey') || pm.environment.get('apiKey');",
+					"const secretKey = pm.variables.get('secretKey') || pm.environment.get('secretKey');",
+					"",
+					"// Method",
+					"const httpMethod = pm.request.method.toUpperCase();",
+					"",
+					"// Get the RESOLVED URL with query parameters",
+					"let requestUri = pm.request.url.getPath();",
+					"",
+					"// Add query parameters if present",
+					"const queryParams = pm.request.url.query.all();",
+					"if (queryParams && queryParams.length > 0) {",
+					"  const queryString = queryParams",
+					"    .filter(param => !param.disabled)",
+					"    .map(param => param.key + '=' + param.value)",
+					"    .join('&');",
+					"  if (queryString) {",
+					"    requestUri += '?' + queryString;",
+					"  }",
+					"}",
+					"",
+					"// Debug logging",
+					"console.log('=== BOOTH MAPPING API SIGNATURE ===');",
+					"console.log('HTTP Method:', httpMethod);",
+					"console.log('Request URI:', requestUri);",
+					"console.log('Request Body:', requestBody || '(empty)');",
+					"console.log('Timestamp:', timestamp);",
+					"console.log('API Key:', apiKey ? apiKey.substring(0, 10) + '...' : 'MISSING');",
+					"",
+					"// Check for unresolved variables",
+					"if (requestUri.includes('{{') || requestUri.includes('}}')) {",
+					"  console.error('?? ERROR: Unresolved variable in URI!');",
+					"  console.error('URI:', requestUri);",
+					"}",
+					"",
+					"// String to sign: METHOD + URI + BODY + TIMESTAMP + APIKEY",
+					"const stringToSign = httpMethod + requestUri + requestBody + timestamp + apiKey;",
+					"console.log('String to Sign:', stringToSign.substring(0, 100) + '...');",
+					"",
+					"// Calculate HMAC-SHA256 signature",
+					"const signature = CryptoJS.HmacSHA256(stringToSign, secretKey).toString(CryptoJS.enc.Base64);",
+					"console.log('Generated Signature:', signature);",
+					"console.log('===================================');",
+					"",
+					"// Set variables for request headers",
+					"pm.variables.set('timestamp', timestamp);",
+					"pm.variables.set('signature', signature);"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test for all requests",
+					"pm.test(\"Response time is acceptable\", function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+					"});",
+					"",
+					"pm.test(\"Response has timestamp\", function () {",
+					"    var jsonData = pm.response.json();",
+					"    pm.expect(jsonData).to.have.property('timestamp');",
+					"});",
+					"",
+					"// Log response status",
+					"console.log('Response status: ' + pm.response.status);"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000/api/booth",
+			"type": "string"
+		},
+		{
+			"key": "apiKey",
+			"value": "BOOTH_API_KEY_12345678901234567890123456789012",
+			"type": "string"
+		},
+		{
+			"key": "secretKey",
+			"value": "BOOTH_SECRET_KEY_67890ABCDEFGHIJ1234567890",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "12345678",
+			"type": "string"
+		},
+		{
+			"key": "booth_id",
+			"value": "BOOTH_000001",
+			"type": "string"
+		},
+		{
+			"key": "timestamp",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "signature",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login - Valid Credentials",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Test response status",
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"// Parse response",
+									"var jsonData = pm.response.json();",
+									"",
+									"// Test response structure",
+									"pm.test(\"Response has success property\", function () {",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"});",
+									"",
+									"pm.test(\"Success is true\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Response has data property\", function () {",
+									"    pm.expect(jsonData).to.have.property('data');",
+									"});",
+									"",
+									"pm.test(\"Data has token\", function () {",
+									"    pm.expect(jsonData.data).to.have.property('token');",
+									"});",
+									"",
+									"// Save token to environment variable",
+									"if (jsonData.success && jsonData.data && jsonData.data.token) {",
+									"    pm.environment.set(\"auth_token\", jsonData.data.token);",
+									"    pm.environment.set(\"user_id\", jsonData.data.userId);",
+									"    console.log(\"Token saved: \" + jsonData.data.token);",
+									"}",
+									"",
+									"// Test user data",
+									"pm.test(\"User data is complete\", function () {",
+									"    pm.expect(jsonData.data).to.have.property('userId');",
+									"    pm.expect(jsonData.data).to.have.property('userName');",
+									"    pm.expect(jsonData.data).to.have.property('role');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"12345678\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"description": "Login with valid 8-character user ID and password.\n\n**Schema:** ULBERP (ulberp/ulberp)\n**Stored Procedure:** SP_USER_LOGIN\n**Authentication:** Public endpoint (no signature required)\n\n**Success Response:**\n```json\n{\n  \"success\": true,\n  \"message\": \"Login successful\",\n  \"data\": {\n    \"userId\": \"12345678\",\n    \"userName\": \"User 12345678\",\n    \"role\": \"Mapper\",\n    \"token\": \"success-token-12345678\"\n  },\n  \"timestamp\": \"2026-01-14T10:30:00.000Z\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Login - Invalid Credentials",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 401\", function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Success is false\", function () {",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"});",
+									"",
+									"pm.test(\"Error message present\", function () {",
+									"    pm.expect(jsonData.message).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userId\": \"12345678\",\n  \"password\": \"wrongpassword\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"description": "Test login with invalid credentials to verify authentication is working properly."
+					},
+					"response": []
+				},
+				{
+					"name": "Login - Missing UserId",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Success is false\", function () {",
+									"    pm.expect(jsonData.success).to.be.false;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"login"
+							]
+						},
+						"description": "Test validation error handling when userId is missing."
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication endpoints using ULBERP schema (Public - No SHA signature required)"
+		},
+		{
+			"name": "Statistics",
+			"item": [
+				{
+					"name": "Get Overall Statistics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Success is true\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Statistics data is present\", function () {",
+									"    pm.expect(jsonData.data).to.have.property('totalBooths');",
+									"    pm.expect(jsonData.data).to.have.property('mappedBooths');",
+									"    pm.expect(jsonData.data).to.have.property('unmappedBooths');",
+									"});",
+									"",
+									"pm.test(\"Booth counts are numbers\", function () {",
+									"    pm.expect(jsonData.data.totalBooths).to.be.a('number');",
+									"    pm.expect(jsonData.data.mappedBooths).to.be.a('number');",
+									"    pm.expect(jsonData.data.unmappedBooths).to.be.a('number');",
+									"});",
+									"",
+									"pm.test(\"Math adds up\", function () {",
+									"    var total = jsonData.data.totalBooths;",
+									"    var mapped = jsonData.data.mappedBooths;",
+									"    var unmapped = jsonData.data.unmappedBooths;",
+									"    pm.expect(total).to.equal(mapped + unmapped);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "{{signature}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/statistics",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"statistics"
+							]
+						},
+						"description": "Get overall booth statistics.\n\n**Schema:** WEBSITE (ws/ws)\n**Stored Procedure:** SP_GET_STATISTICS\n**Authentication:** SHA-256 HMAC signature required\n\n**Headers Required:**\n- X-API-Key: API key for identification\n- X-Timestamp: Unix timestamp (seconds)\n- X-Signature: HMAC-SHA256(METHOD + URI + BODY + TIMESTAMP + APIKEY, SECRET)\n\n**Response:**\n```json\n{\n  \"success\": true,\n  \"message\": \"Statistics retrieved successfully\",\n  \"data\": {\n    \"totalBooths\": 527,\n    \"mappedBooths\": 145,\n    \"unmappedBooths\": 382,\n    \"userMappedBooths\": 0,\n    \"userUnmappedBooths\": 527\n  },\n  \"timestamp\": \"2026-01-14T10:30:00.000Z\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get User-Specific Statistics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Success is true\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"User statistics are present\", function () {",
+									"    pm.expect(jsonData.data).to.have.property('userMappedBooths');",
+									"    pm.expect(jsonData.data).to.have.property('userUnmappedBooths');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "{{signature}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/statistics?userId={{user_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"statistics"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{user_id}}",
+									"description": "8-character user ID"
+								}
+							]
+						},
+						"description": "Get statistics filtered by specific user to see their contributions.\n\n**Authentication:** SHA-256 HMAC signature required"
+					},
+					"response": []
+				}
+			],
+			"description": "Statistics endpoints using WEBSITE schema (SHA-256 auth required)"
+		},
+		{
+			"name": "Booths",
+			"item": [
+				{
+					"name": "Get All Booths",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Success is true\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Data is an array\", function () {",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"});",
+									"",
+									"if (jsonData.data && jsonData.data.length > 0) {",
+									"    pm.test(\"Booth object has required properties\", function () {",
+									"        var booth = jsonData.data[0];",
+									"        pm.expect(booth).to.have.property('id');",
+									"        pm.expect(booth).to.have.property('boothNo');",
+									"        pm.expect(booth).to.have.property('boothName');",
+									"        pm.expect(booth).to.have.property('boothNameEnglish');",
+									"        pm.expect(booth).to.have.property('wardNo');",
+									"        pm.expect(booth).to.have.property('isMapped');",
+									"    });",
+									"    ",
+									"    // Save first booth ID for later use",
+									"    pm.environment.set(\"booth_id\", jsonData.data[0].id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "{{signature}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/booths",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"booths"
+							]
+						},
+						"description": "Get complete list of all booths.\n\n**Schema:** WEBSITE (ws/ws)\n**Stored Procedure:** SP_GET_ALL_BOOTHS\n**Authentication:** SHA-256 HMAC signature required"
+					},
+					"response": []
+				},
+				{
+					"name": "Search - Unmapped Booths Only",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"All results are unmapped\", function () {",
+									"    jsonData.data.forEach(function(booth) {",
+									"        pm.expect(booth.isMapped).to.equal('false');",
+									"    });",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "{{signature}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/booths/search?isMapped=0",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"booths",
+								"search"
+							],
+							"query": [
+								{
+									"key": "isMapped",
+									"value": "0",
+									"description": "0 = unmapped, 1 = mapped"
+								}
+							]
+						},
+						"description": "Search for only unmapped booths (isMapped = 0).\n\n**Authentication:** SHA-256 HMAC signature required"
+					},
+					"response": []
+				},
+				{
+					"name": "Search - By Ward Number",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "{{signature}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/booths/search?wardNo=1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"booths",
+								"search"
+							],
+							"query": [
+								{
+									"key": "wardNo",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Search booths by ward number.\n\n**Authentication:** SHA-256 HMAC signature required"
+					},
+					"response": []
+				}
+			],
+			"description": "Booth listing and search endpoints (SHA-256 auth required)"
+		},
+		{
+			"name": "Location Updates",
+			"item": [
+				{
+					"name": "Update Booth Location - Success",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"",
+									"pm.test(\"Success is true\", function () {",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});",
+									"",
+									"pm.test(\"Booth is now mapped\", function () {",
+									"    pm.expect(jsonData.data.isMapped).to.equal('true');",
+									"    pm.expect(jsonData.data.latitude).to.exist;",
+									"    pm.expect(jsonData.data.longitude).to.exist;",
+									"    pm.expect(jsonData.data.mappedBy).to.exist;",
+									"    pm.expect(jsonData.data.mappedDate).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "{{signature}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": 19.0760,\n  \"longitude\": 72.8777,\n  \"userId\": \"{{user_id}}\",\n  \"remarks\": \"GPS location verified on site visit\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/booths/{{booth_id}}/location",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"booths",
+								"{{booth_id}}",
+								"location"
+							]
+						},
+						"description": "Update booth GPS location.\n\n**Schema:** WEBSITE (ws/ws)\n**Stored Procedure:** SP_UPDATE_BOOTH_LOCATION\n**Authentication:** SHA-256 HMAC signature required\n\n**Headers Required:**\n- Content-Type: application/json\n- X-API-Key: API key\n- X-Timestamp: Unix timestamp\n- X-Signature: HMAC-SHA256 signature"
+					},
+					"response": []
+				}
+			],
+			"description": "GPS location update endpoints (SHA-256 auth required)"
+		},
+		{
+			"name": "Error Handling",
+			"item": [
+				{
+					"name": "Missing API Key",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 401 or 400\", function () {",
+									"    pm.expect([400, 401]).to.include(pm.response.code);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Error message mentions API Key\", function () {",
+									"    pm.expect(jsonData.message.toLowerCase()).to.include('api key');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/statistics",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"statistics"
+							]
+						},
+						"description": "Test that endpoints require API Key header."
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid Signature",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 401\", function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Error message mentions signature\", function () {",
+									"    pm.expect(jsonData.message.toLowerCase()).to.include('signature');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{apiKey}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Timestamp",
+								"value": "{{timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-Signature",
+								"value": "invalid_signature_here",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/statistics",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"statistics"
+							]
+						},
+						"description": "Test that invalid signatures are rejected."
+					},
+					"response": []
+				}
+			],
+			"description": "Error handling and security tests"
+		}
+	]
+}

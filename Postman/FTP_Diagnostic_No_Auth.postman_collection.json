@@ -1,0 +1,387 @@
+{
+	"info": {
+		"_postman_id": "ftp-diagnostic-collection-2026",
+		"name": "FTP Diagnostic - No Auth Required",
+		"description": "Diagnostic endpoints to test FTP connectivity and troubleshoot upload issues.\n\n?? **WARNING**: These endpoints do NOT require authentication and should be removed before production deployment.\n\n**Purpose**: Diagnose FTP connectivity issues when uploads fail from public domain (smkc.gov.in:8443) but work from localhost.\n\n**Endpoints**:\n1. Network Info - Shows server location and FTP connectivity\n2. FTP Config - Shows FTP configuration (sensitive!)\n3. FTP Connection Test - Tests complete FTP workflow\n\n**Usage**: Import this collection, update the `{{baseUrl}}` variable to your server URL, and run the tests.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Network Info",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Response has success field\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property('success');",
+							"});",
+							"",
+							"pm.test(\"Can ping FTP server\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    if (jsonData.success && jsonData.data && jsonData.data.networkTests) {",
+							"        pm.expect(jsonData.data.networkTests.canPingFtpServer).to.be.true;",
+							"    }",
+							"});",
+							"",
+							"pm.test(\"Can connect to FTP port\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    if (jsonData.success && jsonData.data && jsonData.data.networkTests) {",
+							"        pm.expect(jsonData.data.networkTests.canConnectToFtpPort).to.be.true;",
+							"    }",
+							"});",
+							"",
+							"// Display key information",
+							"var jsonData = pm.response.json();",
+							"if (jsonData.success && jsonData.data) {",
+							"    console.log(\"???  Server Name:\", jsonData.data.serverName);",
+							"    console.log(\"?? Server IPs:\", jsonData.data.serverLocalIPs);",
+							"    console.log(\"?? Client IP:\", jsonData.data.clientIP);",
+							"    console.log(\"?? Can Ping FTP:\", jsonData.data.networkTests.canPingFtpServer);",
+							"    console.log(\"?? Can Connect FTP:\", jsonData.data.networkTests.canConnectToFtpPort);",
+							"    console.log(\"?? FTP Host:\", jsonData.data.ftpConfiguration.host);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/ftp-diagnostic/network-info",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"ftp-diagnostic",
+						"network-info"
+					]
+				},
+				"description": "**Shows network and server information to diagnose routing issues.**\n\n**No authentication required!**\n\n**Returns:**\n- Server name and local IPs\n- Client IP making the request\n- FTP server connectivity tests (ping & TCP)\n- FTP configuration details\n\n**Use this to determine:**\n1. Which server is handling the request (localhost vs public)\n2. If that server can reach the FTP server (192.168.40.47)\n3. Network connectivity status\n\n**Expected Result (Working):**\n- `canPingFtpServer: true`\n- `canConnectToFtpPort: true`\n- `serverLocalIPs` should include `192.168.40.35` or similar LAN IP"
+			},
+			"response": [
+				{
+					"name": "Success - FTP Accessible",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/ftp-diagnostic/network-info",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ftp-diagnostic",
+								"network-info"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"success\": true,\n  \"message\": \"Network diagnostic information\",\n  \"data\": {\n    \"serverName\": \"API-SERVER\",\n    \"serverLocalIPs\": [\n      \"192.168.40.35\",\n      \"127.0.0.1\"\n    ],\n    \"requestUri\": \"https://localhost:5443/api/ftp-diagnostic/network-info\",\n    \"requestHost\": \"localhost\",\n    \"requestMethod\": \"GET\",\n    \"clientIP\": \"192.168.40.27\",\n    \"userAgent\": \"PostmanRuntime/7.32.1\",\n    \"ftpConfiguration\": {\n      \"host\": \"192.168.40.47\",\n      \"port\": 21,\n      \"user\": \"smkcapi_ftp\",\n      \"basePath\": \"/BankConsents\",\n      \"ftpUri\": \"ftp://192.168.40.47:21/BankConsents\"\n    },\n    \"networkTests\": {\n      \"canPingFtpServer\": true,\n      \"pingResult\": \"Success (0ms)\",\n      \"canConnectToFtpPort\": true,\n      \"tcpConnectionResult\": \"Connected successfully\"\n    },\n    \"timestamp\": \"2026-01-26 03:00:00 UTC\"\n  }\n}"
+				},
+				{
+					"name": "Failure - FTP Not Accessible",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/ftp-diagnostic/network-info",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ftp-diagnostic",
+								"network-info"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"success\": true,\n  \"message\": \"Network diagnostic information\",\n  \"data\": {\n    \"serverName\": \"DMZ-SERVER\",\n    \"serverLocalIPs\": [\n      \"10.0.1.50\",\n      \"127.0.0.1\"\n    ],\n    \"requestUri\": \"https://smkc.gov.in:5443/api/ftp-diagnostic/network-info\",\n    \"requestHost\": \"smkc.gov.in\",\n    \"requestMethod\": \"GET\",\n    \"clientIP\": \"203.123.45.67\",\n    \"userAgent\": \"PostmanRuntime/7.32.1\",\n    \"ftpConfiguration\": {\n      \"host\": \"192.168.40.47\",\n      \"port\": 21,\n      \"user\": \"smkcapi_ftp\",\n      \"basePath\": \"/BankConsents\",\n      \"ftpUri\": \"ftp://192.168.40.47:21/BankConsents\"\n    },\n    \"networkTests\": {\n      \"canPingFtpServer\": false,\n      \"pingResult\": \"TimedOut (0ms)\",\n      \"canConnectToFtpPort\": false,\n      \"tcpConnectionResult\": \"Connection timeout (3 seconds)\"\n    },\n    \"timestamp\": \"2026-01-26 03:00:00 UTC\"\n  }\n}"
+				}
+			]
+		},
+		{
+			"name": "2. FTP Configuration",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Password is configured\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    if (jsonData.success && jsonData.data) {",
+							"        pm.expect(jsonData.data.passwordLength).to.be.above(0);",
+							"    }",
+							"});",
+							"",
+							"// Display configuration",
+							"var jsonData = pm.response.json();",
+							"if (jsonData.success && jsonData.data) {",
+							"    console.log(\"?? FTP Host:\", jsonData.data.host);",
+							"    console.log(\"?? FTP Port:\", jsonData.data.port);",
+							"    console.log(\"?? FTP User:\", jsonData.data.user);",
+							"    console.log(\"?? Password Length:\", jsonData.data.passwordLength, \"chars\");",
+							"    console.log(\"?? Contains $:\", jsonData.data.passwordContainsDollar);",
+							"    console.log(\"?? Base Path:\", jsonData.data.basePath);",
+							"    console.log(\"?? Full URI:\", jsonData.data.fullUri);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/ftp-diagnostic/config",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"ftp-diagnostic",
+						"config"
+					]
+				},
+				"description": "**Shows FTP configuration read from Web.config.**\n\n**?? WARNING**: This endpoint exposes sensitive information (FTP credentials details). Remove before production!\n\n**No authentication required!**\n\n**Returns:**\n- FTP server host and port\n- Username\n- Password length and character analysis (not the actual password)\n- Base path\n- Full FTP URI\n\n**Use this to verify:**\n1. Configuration is being read correctly from Web.config\n2. Password contains expected special characters\n3. FTP path is correct"
+			},
+			"response": [
+				{
+					"name": "Success",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/ftp-diagnostic/config",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ftp-diagnostic",
+								"config"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"success\": true,\n  \"message\": \"FTP Configuration (Sensitive - Remove in production!)\",\n  \"data\": {\n    \"host\": \"192.168.40.47\",\n    \"port\": 21,\n    \"user\": \"smkcapi_ftp\",\n    \"passwordLength\": 16,\n    \"passwordFirstChar\": \"S\",\n    \"passwordLastChar\": \"!\",\n    \"passwordContainsDollar\": true,\n    \"basePath\": \"/BankConsents\",\n    \"fullUri\": \"ftp://192.168.40.47:21/BankConsents\"\n  }\n}"
+				}
+			]
+		},
+		{
+			"name": "3. FTP Connection Test (Full)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"FTP test completed\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property('success');",
+							"    pm.expect(jsonData).to.have.property('message');",
+							"});",
+							"",
+							"// Check if all tests passed",
+							"var jsonData = pm.response.json();",
+							"if (jsonData.success) {",
+							"    pm.test(\"All FTP tests passed\", function () {",
+							"        pm.expect(jsonData.message).to.include('All Tests Passed');",
+							"    });",
+							"    console.log(\"? SUCCESS: FTP is working correctly!\");",
+							"} else {",
+							"    console.log(\"? FAILED: FTP has issues\");",
+							"    console.log(\"?? Details:\");",
+							"    console.log(jsonData.message);",
+							"}",
+							"",
+							"// Display the full message",
+							"console.log(\"\\n\" + jsonData.message);"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/ftp-diagnostic/test",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"ftp-diagnostic",
+						"test"
+					]
+				},
+				"description": "**Runs comprehensive FTP connectivity and permissions test.**\n\n**No authentication required!**\n\n**Tests performed:**\n1. FTP server connectivity (can connect and authenticate)\n2. Base directory existence check\n3. Base directory creation (if needed)\n4. Write permission test (create test subdirectory)\n5. Cleanup (delete test subdirectory)\n\n**Success Response:**\n```\n=== All Tests Passed! ===\nFTP server is properly configured and ready to use.\n```\n\n**Failure Response:**\nShows which specific test failed and provides actionable guidance.\n\n**Use this to:**\n1. Verify FTP works from the API server\n2. Compare results between localhost and public domain\n3. Identify exact point of failure (connectivity, auth, permissions)"
+			},
+			"response": [
+				{
+					"name": "Success - All Tests Pass",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/ftp-diagnostic/test",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ftp-diagnostic",
+								"test"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"success\": true,\n  \"message\": \"=== FTP Diagnostic Test ===\\n\\nServer: ftp://192.168.40.47:21\\nUser: smkcapi_ftp\\nPassword Length: 16 chars\\nBase Path: /BankConsents\\n\\nTest 1: Testing FTP server connectivity...\\n? SUCCESS: Connected to FTP server. Status: 257 \\\"/\\\" is current directory.\\n  Root directory listing:\\n    - BankConsents\\n    - OtherFolder\\n\\nTest 2: Checking if base directory exists...\\n? SUCCESS: Base directory /BankConsents exists\\n\\nTest 4: Testing write permissions (creating test directory)...\\n? SUCCESS: Created test directory /BankConsents/TEST_6f5d0a47\\n\\nTest 5: Cleaning up test directory...\\n? SUCCESS: Deleted test directory /BankConsents/TEST_6f5d0a47\\n\\n=== All Tests Passed! ===\\nFTP server is properly configured and ready to use.\"\n}"
+				},
+				{
+					"name": "Failure - Cannot Connect",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/ftp-diagnostic/test",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ftp-diagnostic",
+								"test"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"success\": false,\n  \"message\": \"=== FTP Diagnostic Test ===\\n\\nServer: ftp://192.168.40.47:21\\nUser: smkcapi_ftp\\nPassword Length: 16 chars\\nBase Path: /BankConsents\\n\\nTest 1: Testing FTP server connectivity...\\n? FAILED: Connection Error - Unable to connect to the remote server\\n  Possible causes:\\n  - FTP server is not running on 192.168.40.47\\n  - Network connectivity issue\\n  - Firewall blocking connection\\n  - Incorrect credentials\"\n}"
+				},
+				{
+					"name": "Failure - Permission Denied",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/ftp-diagnostic/test",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ftp-diagnostic",
+								"test"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"success\": false,\n  \"message\": \"=== FTP Diagnostic Test ===\\n\\nServer: ftp://192.168.40.47:21\\nUser: smkcapi_ftp\\nPassword Length: 16 chars\\nBase Path: /BankConsents\\n\\nTest 1: Testing FTP server connectivity...\\n? SUCCESS: Connected to FTP server. Status: 230 User logged in.\\n\\nTest 2: Checking if base directory exists...\\n? SUCCESS: Base directory /BankConsents exists\\n\\nTest 4: Testing write permissions (creating test directory)...\\n? FAILED: Write permission test failed - FTP MakeDirectory failed for /BankConsents/TEST_abc123: Status=550 (ActionNotTakenFileUnavailable), Message=Access is denied. Server: ftp://192.168.40.47:21, User: smkcapi_ftp\\n  ACTION REQUIRED:\\n  Grant write/modify permissions to FTP user 'smkcapi_ftp' on directory /BankConsents\"\n}"
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// No authentication needed for diagnostic endpoints",
+					"console.log(\"?? No authentication required for FTP diagnostic endpoints\");"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test scripts",
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:5443",
+			"type": "string",
+			"description": "Base URL for API server.\n\nFor localhost testing: https://localhost:5443\nFor public testing: https://smkc.gov.in:8443\n\nChange this based on where you want to test from."
+		}
+	]
+}

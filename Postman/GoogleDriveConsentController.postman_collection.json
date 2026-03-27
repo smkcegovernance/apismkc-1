@@ -1,0 +1,634 @@
+{
+	"info": {
+		"_postman_id": "gdrive-consent-api-collection",
+		"name": "Google Drive Consent Controller API",
+		"description": "Complete API collection for GoogleDriveConsentController - Upload and manage bank consent documents using Google Drive storage.\n\n**Base URL**: `http://localhost:port` or your server URL\n\n**Authentication**: None required - Plain access for all endpoints\n\n**Features**:\n- Upload consent documents to Google Drive\n- Download consent documents\n- Get document information/metadata\n- Health check endpoint",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/deposits/consent/googledrive/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"deposits",
+						"consent",
+						"googledrive",
+						"health"
+					]
+				},
+				"description": "Health check endpoint to verify the Google Drive Consent Controller is accessible and operational.\n\n**Endpoint**: `GET /api/deposits/consent/googledrive/health`\n\n**Authentication**: None\n\n**Response**:\n- Returns controller status\n- Storage type information\n- Storage location\n- Log file path\n- Authentication status"
+			},
+			"response": [
+				{
+					"name": "Success Response",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"health"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"GoogleDriveConsentController is accessible\",\n    \"timestamp\": \"2024-01-20T10:30:00.000Z\",\n    \"storageType\": \"Google Drive\",\n    \"storageLocation\": \"DepositManager/BankConsent\",\n    \"logFilePath\": \"C:\\\\smkcapi_published\\\\Logs\\\\FtpLog_20240120.txt\",\n    \"authenticationRequired\": false\n}"
+				}
+			]
+		},
+		{
+			"name": "Upload Consent Document",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"requirementId\": \"REQ0000000001\",\n  \"bankId\": \"BANK001\",\n  \"quoteId\": \"QUOTE001\",\n  \"fileName\": \"consent_document.pdf\",\n  \"fileData\": \"JVBERi0xLjQKJeLjz9MKMyAwIG9iago8PC9UeXBlL1BhZ2UvUGFyZW50IDIgMCBSL1Jlc291cmNlczw8L0ZvbnQ8PC9GMSA0IDAgUj4+Pj4vTWVkaWFCb3hbMCAwIDYxMiA3OTJdL0NvbnRlbnRzIDUgMCBSPj4KZW5kb2JqCjQgMCBvYmoKPDwvVHlwZS9Gb250L1N1YnR5cGUvVHlwZTEvQmFzZUZvbnQvVGltZXMtUm9tYW4+PgplbmRvYmoKNSAwIG9iago8PC9MZW5ndGggNDQ+PnN0cmVhbQpCVAovRjEgMTggVGYKMTAwIDcwMCBUZAooVGVzdCBDb25zZW50IERvY3VtZW50KSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjIgMCBvYmoKPDwvVHlwZS9QYWdlcy9Db3VudCAxL0tpZHNbMyAwIFJdPj4KZW5kb2JqCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nL1BhZ2VzIDIgMCBSPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDI4MSAwMDAwMCBuIAowMDAwMDAwMjMwIDAwMDAwIG4gCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDEyNiAwMDAwMCBuIAowMDAwMDAwMTk1IDAwMDAwIG4gCnRyYWlsZXIKPDwvU2l6ZSA2L1Jvb3QgMSAwIFI+PgpzdGFydHhyZWYKMzMwCiUlRU9G\",\n  \"fileSize\": 330,\n  \"contentType\": \"application/pdf\",\n  \"uploadedBy\": \"admin@bank.com\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/deposits/consent/googledrive/upload",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"deposits",
+						"consent",
+						"googledrive",
+						"upload"
+					]
+				},
+				"description": "Upload a consent document to Google Drive storage.\n\n**Endpoint**: `POST /api/deposits/consent/googledrive/upload`\n\n**Authentication**: None\n\n**Request Body**:\n- `requirementId` (string, required): Requirement identifier (e.g., REQ0000000001)\n- `bankId` (string, required): Bank identifier\n- `quoteId` (string, optional): Quote identifier\n- `fileName` (string, required): Name of the file to upload\n- `fileData` (string, required): Base64 encoded file content\n- `fileSize` (number, optional): Size of the file in bytes\n- `contentType` (string, optional): MIME type (default: application/pdf)\n- `uploadedBy` (string, optional): Email or identifier of the uploader\n\n**Response**:\n- Returns upload status\n- File information (name, size, paths)\n- Download URL\n\n**Note**: The fileData in the example is a minimal valid PDF in base64 format."
+			},
+			"response": [
+				{
+					"name": "Success Response",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"requirementId\": \"REQ0000000001\",\n  \"bankId\": \"BANK001\",\n  \"quoteId\": \"QUOTE001\",\n  \"fileName\": \"consent_document.pdf\",\n  \"fileData\": \"JVBERi0xLjQKJeL...\",\n  \"fileSize\": 330,\n  \"contentType\": \"application/pdf\",\n  \"uploadedBy\": \"admin@bank.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/upload",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"upload"
+							]
+						}
+					},
+					"status": "Created",
+					"code": 201,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Consent document uploaded successfully to Google Drive\",\n    \"data\": {\n        \"fileName\": \"consent_document_20240120103045.pdf\",\n        \"originalFileName\": \"consent_document.pdf\",\n        \"requirementId\": \"REQ0000000001\",\n        \"bankId\": \"BANK001\",\n        \"quoteId\": \"QUOTE001\",\n        \"fileSize\": 330,\n        \"contentType\": \"application/pdf\",\n        \"uploadedAt\": \"2024-01-20T10:30:45.123Z\",\n        \"uploadedBy\": \"admin@bank.com\",\n        \"storagePath\": \"DepositManager/BankConsent/REQ0000000001/BANK001/consent_document_20240120103045.pdf\",\n        \"downloadUrl\": \"/api/deposits/consent/googledrive/download?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document_20240120103045.pdf\"\n    }\n}"
+				},
+				{
+					"name": "Validation Error - Missing Fields",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"requirementId\": \"REQ0000000001\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/upload",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"upload"
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": false,\n    \"message\": \"bankId is required\",\n    \"error\": \"INVALID_REQUEST\",\n    \"errorCode\": \"MISSING_PARAMETER\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Download Consent Document (Binary)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/pdf",
+						"type": "text",
+						"description": "Request binary PDF download"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/deposits/consent/googledrive/download?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document_20240120103045.pdf",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"deposits",
+						"consent",
+						"googledrive",
+						"download"
+					],
+					"query": [
+						{
+							"key": "requirementId",
+							"value": "REQ0000000001",
+							"description": "Requirement identifier (required)"
+						},
+						{
+							"key": "bankId",
+							"value": "BANK001",
+							"description": "Bank identifier (required)"
+						},
+						{
+							"key": "fileName",
+							"value": "consent_document_20240120103045.pdf",
+							"description": "File name to download (required)"
+						}
+					]
+				},
+				"description": "Download a consent document from Google Drive as a binary file.\n\n**Endpoint**: `GET /api/deposits/consent/googledrive/download`\n\n**Authentication**: None\n\n**Query Parameters**:\n- `requirementId` (string, required): Requirement identifier\n- `bankId` (string, required): Bank identifier\n- `fileName` (string, required): Name of the file to download\n\n**Headers**:\n- `Accept: application/pdf` - Returns binary PDF file\n- `Accept: application/json` - Returns JSON with base64 encoded data\n\n**Response** (Binary mode):\n- Content-Type: application/pdf\n- Content-Disposition: attachment; filename=\"...\"\n- Binary file content"
+			},
+			"response": [
+				{
+					"name": "Success Response (Binary)",
+					"originalRequest": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/pdf"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/download?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document.pdf",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"download"
+							],
+							"query": [
+								{
+									"key": "requirementId",
+									"value": "REQ0000000001"
+								},
+								{
+									"key": "bankId",
+									"value": "BANK001"
+								},
+								{
+									"key": "fileName",
+									"value": "consent_document.pdf"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "raw",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/pdf"
+						},
+						{
+							"key": "Content-Disposition",
+							"value": "attachment; filename=\"consent_document.pdf\""
+						}
+					],
+					"cookie": [],
+					"body": "<Binary PDF Content>"
+				},
+				{
+					"name": "File Not Found",
+					"originalRequest": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/pdf"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/download?requirementId=REQ9999999999&bankId=BANK999&fileName=nonexistent.pdf",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"download"
+							],
+							"query": [
+								{
+									"key": "requirementId",
+									"value": "REQ9999999999"
+								},
+								{
+									"key": "bankId",
+									"value": "BANK999"
+								},
+								{
+									"key": "fileName",
+									"value": "nonexistent.pdf"
+								}
+							]
+						}
+					},
+					"status": "Not Found",
+					"code": 404,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": false,\n    \"message\": \"Consent document not found on Google Drive\",\n    \"error\": \"FILE_NOT_FOUND\",\n    \"data\": {\n        \"requirementId\": \"REQ9999999999\",\n        \"bankId\": \"BANK999\",\n        \"fileName\": \"nonexistent.pdf\",\n        \"hint\": \"Check logs at: C:\\\\smkcapi_published\\\\Logs\\\\FtpLog_YYYYMMDD.txt for detailed path information\"\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "Download Consent Document (JSON)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text",
+						"description": "Request JSON response with base64 data"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/deposits/consent/googledrive/download?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document_20240120103045.pdf",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"deposits",
+						"consent",
+						"googledrive",
+						"download"
+					],
+					"query": [
+						{
+							"key": "requirementId",
+							"value": "REQ0000000001",
+							"description": "Requirement identifier (required)"
+						},
+						{
+							"key": "bankId",
+							"value": "BANK001",
+							"description": "Bank identifier (required)"
+						},
+						{
+							"key": "fileName",
+							"value": "consent_document_20240120103045.pdf",
+							"description": "File name to download (required)"
+						}
+					]
+				},
+				"description": "Download a consent document from Google Drive as JSON with base64 encoded data.\n\n**Endpoint**: `GET /api/deposits/consent/googledrive/download`\n\n**Authentication**: None\n\n**Query Parameters**:\n- `requirementId` (string, required): Requirement identifier\n- `bankId` (string, required): Bank identifier\n- `fileName` (string, required): Name of the file to download\n\n**Headers**:\n- `Accept: application/json` - Returns JSON with base64 encoded data\n\n**Response** (JSON mode):\n- Returns JSON object with file metadata\n- File content as base64 string in `fileData` field"
+			},
+			"response": [
+				{
+					"name": "Success Response (JSON)",
+					"originalRequest": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/download?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document.pdf",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"download"
+							],
+							"query": [
+								{
+									"key": "requirementId",
+									"value": "REQ0000000001"
+								},
+								{
+									"key": "bankId",
+									"value": "BANK001"
+								},
+								{
+									"key": "fileName",
+									"value": "consent_document.pdf"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Consent document retrieved successfully from Google Drive\",\n    \"data\": {\n        \"fileName\": \"consent_document.pdf\",\n        \"fileData\": \"JVBERi0xLjQKJeLjz9MKMyAwIG9iago8PC9UeXBlL1BhZ2UvUGFy...\",\n        \"contentType\": \"application/pdf\",\n        \"requirementId\": \"REQ0000000001\",\n        \"bankId\": \"BANK001\",\n        \"downloadedAt\": \"2024-01-20T10:35:00.000Z\",\n        \"storageLocation\": \"Google Drive\"\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "Get Document Info",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/deposits/consent/googledrive/info?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document_20240120103045.pdf",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"deposits",
+						"consent",
+						"googledrive",
+						"info"
+					],
+					"query": [
+						{
+							"key": "requirementId",
+							"value": "REQ0000000001",
+							"description": "Requirement identifier (required)"
+						},
+						{
+							"key": "bankId",
+							"value": "BANK001",
+							"description": "Bank identifier (required)"
+						},
+						{
+							"key": "fileName",
+							"value": "consent_document_20240120103045.pdf",
+							"description": "File name to get info for (required)"
+						}
+					]
+				},
+				"description": "Get metadata and information about a consent document without downloading it.\n\n**Endpoint**: `GET /api/deposits/consent/googledrive/info`\n\n**Authentication**: None\n\n**Query Parameters**:\n- `requirementId` (string, required): Requirement identifier\n- `bankId` (string, required): Bank identifier\n- `fileName` (string, required): Name of the file\n\n**Response**:\n- File metadata (name, size, content type)\n- Storage location and path\n- Download URL\n- Existence status"
+			},
+			"response": [
+				{
+					"name": "Success Response",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/info?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document.pdf",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"info"
+							],
+							"query": [
+								{
+									"key": "requirementId",
+									"value": "REQ0000000001"
+								},
+								{
+									"key": "bankId",
+									"value": "BANK001"
+								},
+								{
+									"key": "fileName",
+									"value": "consent_document.pdf"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Consent document information retrieved successfully from Google Drive\",\n    \"data\": {\n        \"fileName\": \"consent_document.pdf\",\n        \"fileSize\": 330,\n        \"contentType\": \"application/pdf\",\n        \"requirementId\": \"REQ0000000001\",\n        \"bankId\": \"BANK001\",\n        \"exists\": true,\n        \"storageLocation\": \"Google Drive\",\n        \"storagePath\": \"DepositManager/BankConsent/REQ0000000001/BANK001/consent_document.pdf\",\n        \"downloadUrl\": \"/api/deposits/consent/googledrive/download?requirementId=REQ0000000001&bankId=BANK001&fileName=consent_document.pdf\"\n    }\n}"
+				},
+				{
+					"name": "File Not Found",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/info?requirementId=REQ9999999999&bankId=BANK999&fileName=nonexistent.pdf",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"info"
+							],
+							"query": [
+								{
+									"key": "requirementId",
+									"value": "REQ9999999999"
+								},
+								{
+									"key": "bankId",
+									"value": "BANK999"
+								},
+								{
+									"key": "fileName",
+									"value": "nonexistent.pdf"
+								}
+							]
+						}
+					},
+					"status": "Not Found",
+					"code": 404,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": false,\n    \"message\": \"Consent document not found on Google Drive\",\n    \"error\": \"FILE_NOT_FOUND\",\n    \"data\": {\n        \"requirementId\": \"REQ9999999999\",\n        \"bankId\": \"BANK999\",\n        \"fileName\": \"nonexistent.pdf\",\n        \"hint\": \"Check logs at: C:\\\\smkcapi_published\\\\Logs\\\\FtpLog_YYYYMMDD.txt for detailed path information\"\n    }\n}"
+				},
+				{
+					"name": "Missing Parameters",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/deposits/consent/googledrive/info?requirementId=REQ0000000001",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"deposits",
+								"consent",
+								"googledrive",
+								"info"
+							],
+							"query": [
+								{
+									"key": "requirementId",
+									"value": "REQ0000000001"
+								}
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": false,\n    \"message\": \"requirementId, bankId, and fileName are required\",\n    \"error\": \"INVALID_PARAMETER\"\n}"
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000",
+			"type": "string"
+		}
+	]
+}

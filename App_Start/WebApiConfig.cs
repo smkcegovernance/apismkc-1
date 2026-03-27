@@ -1,7 +1,9 @@
 using System.Web.Http;
 using System.Web.Http.Cors;
+using System.Configuration;
 using SmkcApi.Repositories;
 using SmkcApi.Services;
+using SmkcApi.App_Start; // add to resolve SimpleDependencyResolver
 
 namespace SmkcApi
 {
@@ -11,11 +13,12 @@ namespace SmkcApi
         {
             // Configure dependency injection
             ConfigureDependencyInjection(config);
-            // Enable CORS for specific origins only
+            
+            // Enable CORS for all origins (allow all for development/testing)
             var cors = new EnableCorsAttribute(
-                origins: "https://trusted-bank-domain.com", // Replace with actual bank domains
-                headers: "*",
-                methods: "GET,POST,PUT"
+                origins: "*",           // Allow all origins
+                headers: "*",           // Allow all headers
+                methods: "*"            // Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
             );
             config.EnableCors(cors);
 
@@ -35,14 +38,33 @@ namespace SmkcApi
             config.Formatters.JsonFormatter.SerializerSettings.DateFormatString = "yyyy-MM-ddTHH:mm:ssZ";
             config.Formatters.JsonFormatter.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
 
-            // Add custom message handlers for security
-            config.MessageHandlers.Add(new Security.ApiKeyAuthenticationHandler());
+            // Register SHA/API-key authentication handler for protected endpoints.
+            // Default is enabled to keep DepositManager APIs permanently secured.
+            if (IsApiKeyAuthenticationEnabled())
+            {
+                config.MessageHandlers.Add(new Security.ApiKeyAuthenticationHandler());
+            }
+            else
+            {
+                System.Diagnostics.Trace.TraceWarning(
+                    "API key authentication is disabled via config. Protected endpoints with [ShaAuthentication] will return 401.");
+            }
+        }
+
+        private static bool IsApiKeyAuthenticationEnabled()
+        {
+            var raw = ConfigurationManager.AppSettings["EnableApiKeyAuthentication"];
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return true;
+            }
+
+            bool enabled;
+            return bool.TryParse(raw, out enabled) ? enabled : true;
         }
 
         private static void ConfigureDependencyInjection(HttpConfiguration config)
         {
-            // Simple dependency injection setup
-            // In production, consider using a proper DI container like Unity, Autofac, or Ninject
             config.DependencyResolver = new SimpleDependencyResolver();
         }
     }

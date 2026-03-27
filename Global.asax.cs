@@ -1,6 +1,7 @@
 using System;
 using System.Web;
 using System.Web.Http;
+using System.Web.Routing;
 
 namespace SmkcApi
 {
@@ -8,7 +9,14 @@ namespace SmkcApi
     {
         protected void Application_Start()
         {
+            // Suppress default route registration for MVC
+            RouteTable.Routes.RouteExistingFiles = false;
+            
+            // Configure Web API first
             GlobalConfiguration.Configure(WebApiConfig.Register);
+            
+            // Prevent default MVC routes from interfering
+            RouteTable.Routes.Ignore("{resource}.axd/{*pathInfo}");
         }
 
         protected void Application_BeginRequest()

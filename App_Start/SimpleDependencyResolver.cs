@@ -1,29 +1,36 @@
 using System;
 using System.Collections.Generic;
 using System.Web.Http.Dependencies;
-
-// Existing namespaces
-using SmkcApi.Controllers;
-using SmkcApi.Infrastructure;
 using SmkcApi.Repositories;
 using SmkcApi.Services;
+using SmkcApi.Controllers.DepositManager;
+using SmkcApi.Repositories.DepositManager;
+using SmkcApi.Services.DepositManager;
+using SmkcApi.Controllers; // for VotersController and CoreAccountController
+using SmkcApi.Controllers.BoothMapping; // for Booth Mapping controllers
+using SmkcApi.Repositories.BoothMapping; // for Booth Mapping repositories
+using SmkcApi.Services.BoothMapping; // for Booth Mapping services
+using SmkcApi.Controllers.VotingStatistics; // for Voting Statistics controller
+using SmkcApi.Repositories.VotingStatistics; // for Voting Statistics repository
 
-// Add these usings if your Oracle classes live in Repositories namespace
-// using SmkcApi.Repositories.Oracle; // (if you put Oracle* classes in a sub-namespace)
-
-namespace SmkcApi
+namespace SmkcApi.App_Start
 {
     /// <summary>
     /// Simple dependency resolver for demonstration purposes.
     /// In production, use a proper DI container like Unity, Autofac, or Ninject.
     /// </summary>
-    public class SimpleDependencyResolver : IDependencyResolver
+    public partial class SimpleDependencyResolver : IDependencyResolver
     {
-        private readonly Dictionary<Type, Func<object>> _services = new Dictionary<Type, Func<object>>();
+        private readonly IDictionary<Type, Func<object>> _factories = new Dictionary<Type, Func<object>>();
 
         public SimpleDependencyResolver()
         {
             RegisterDependencies();
+            RegisterDepositManager();
+            RegisterDuplicateVoters();
+            RegisterAuth();
+            RegisterBoothMapping(); // New registration for booth mapping
+            RegisterVotingStatistics(); // New registration for voting statistics
         }
 
         /// <summary>
@@ -31,142 +38,203 @@ namespace SmkcApi
         /// </summary>
         private void RegisterDependencies()
         {
-            //
-            // ORACLE: core plumbing
-            //
-            // NOTE: Ensure you added Oracle.ManagedDataAccess NuGet and created:
-            //   - IOracleConnectionFactory / OracleConnectionFactory
-            //   - IOracleDiagnosticsRepository / OracleDiagnosticsRepository
-            // Connection string name "OracleDb" must exist in Web.config <connectionStrings>.
-            _services[typeof(IOracleConnectionFactory)] = () => new OracleConnectionFactory("OracleDb");
-            _services[typeof(SmkcApi.Repositories.IOracleConnectionFactory)] = () => new SmkcApi.Repositories.OracleConnectionFactory("OracleDb");
-            _services[typeof(SmkcApi.Repositories.IWaterRepository)] = () =>
+            // Default connection factory -> ABAS for business ops
+            _factories[typeof(IOracleConnectionFactory)] = () => new OracleConnectionFactory("OracleDbAbas");
+            _factories[typeof(SmkcApi.Repositories.IOracleConnectionFactory)] = () => new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+
+            _factories[typeof(SmkcApi.Repositories.IWaterRepository)] = () =>
                 new SmkcApi.Repositories.WaterRepository(
                     GetService(typeof(SmkcApi.Repositories.IOracleConnectionFactory)) as SmkcApi.Repositories.IOracleConnectionFactory
                 );
-            _services[typeof(SmkcApi.Services.IWaterService)] = () =>
+            
+            // Register SMS sender
+            _factories[typeof(SmkcApi.Infrastructure.ISmsSender)] = () =>
+                new SmkcApi.Infrastructure.SmsSender(
+                    GetService(typeof(SmkcApi.Repositories.IWaterRepository)) as SmkcApi.Repositories.IWaterRepository
+                );
+            
+            // Register SMS service
+            _factories[typeof(SmkcApi.Services.ISmsService)] = () =>
+                new SmkcApi.Services.SmsService(
+                    GetService(typeof(SmkcApi.Repositories.IWaterRepository)) as SmkcApi.Repositories.IWaterRepository,
+                    GetService(typeof(SmkcApi.Infrastructure.ISmsSender)) as SmkcApi.Infrastructure.ISmsSender
+                );
+            
+            _factories[typeof(SmkcApi.Services.IWaterService)] = () =>
                 new SmkcApi.Services.WaterService(
                     GetService(typeof(SmkcApi.Repositories.IWaterRepository)) as SmkcApi.Repositories.IWaterRepository
                 );
-            _services[typeof(ISmsSender)] = () => new SmkcApi.Infrastructure.SmsSender(
-                GetService(typeof(SmkcApi.Repositories.IWaterRepository)) as SmkcApi.Repositories.IWaterRepository
-            );
-            _services[typeof(ISmsService)] = () => new SmkcApi.Services.SmsService(
-                GetService(typeof(IWaterRepository)) as IWaterRepository,
-                GetService(typeof(ISmsSender)) as ISmsSender
-            );
-            // Controller
-            _services[typeof(SmkcApi.Controllers.WaterController)] = () =>
+            
+            _factories[typeof(SmkcApi.Controllers.WaterController)] = () =>
                 new SmkcApi.Controllers.WaterController(
                     GetService(typeof(SmkcApi.Services.IWaterService)) as SmkcApi.Services.IWaterService,
-                     GetService(typeof(ISmsService)) as ISmsService
+                    GetService(typeof(SmkcApi.Services.ISmsService)) as SmkcApi.Services.ISmsService
                 );
-            _services[typeof(IAccountRepository)] = () => new AccountRepository();
-            _services[typeof(ICustomerRepository)] = () => new CustomerRepository();
-            _services[typeof(ITransactionRepository)] = () => new TransactionRepository();
 
-            //
-            // Park Booking Services
-            //
-            _services[typeof(IParkBookingRepository)] = () => new ParkBookingRepository(
-                GetService(typeof(OracleConnectionFactory)) as OracleConnectionFactory
-            );
+            _factories[typeof(IAccountRepository)] = () => new AccountRepository();
+            _factories[typeof(ICustomerRepository)] = () => new CustomerRepository();
+            _factories[typeof(ITransactionRepository)] = () => new TransactionRepository();
 
-            _services[typeof(IParkBookingService)] = () => new ParkBookingService(
-                GetService(typeof(IParkBookingRepository)) as IParkBookingRepository
-            );
-
-            //
-            // Voter Services (Duplicate Voter Management)
-            //
-            _services[typeof(IVoterRepository)] = () => new VoterRepository(
-                GetService(typeof(SmkcApi.Repositories.IOracleConnectionFactory)) as SmkcApi.Repositories.IOracleConnectionFactory
-            );
-
-            _services[typeof(IVoterService)] = () => new VoterService(
-                GetService(typeof(IVoterRepository)) as IVoterRepository
-            );
-
-            //
-            // Services
-            //
-            _services[typeof(IAccountService)] = () => new AccountService(
+            _factories[typeof(SmkcApi.Services.IAccountService)] = () => new SmkcApi.Services.AccountService(
                 GetService(typeof(IAccountRepository)) as IAccountRepository,
                 GetService(typeof(ICustomerRepository)) as ICustomerRepository
             );
-
-            _services[typeof(ICustomerService)] = () => new CustomerService(
+            _factories[typeof(ICustomerService)] = () => new CustomerService(
                 GetService(typeof(ICustomerRepository)) as ICustomerRepository
             );
-
-            _services[typeof(ITransactionService)] = () => new TransactionService(
+            _factories[typeof(ITransactionService)] = () => new TransactionService(
                 GetService(typeof(ITransactionRepository)) as ITransactionRepository,
                 GetService(typeof(IAccountRepository)) as IAccountRepository
             );
 
-            //
-            // Controllers
-            //
-            _services[typeof(AccountController)] = () => new AccountController(
-                GetService(typeof(IAccountService)) as IAccountService
+            _factories[typeof(SmkcApi.Controllers.CoreAccountController)] = () => new SmkcApi.Controllers.CoreAccountController(
+                GetService(typeof(SmkcApi.Services.IAccountService)) as SmkcApi.Services.IAccountService
             );
-
-            _services[typeof(CustomerController)] = () => new CustomerController(
-                GetService(typeof(ICustomerService)) as ICustomerService
-            );
-
-            _services[typeof(TransactionController)] = () => new TransactionController(
-                GetService(typeof(ITransactionService)) as ITransactionService
-            );
-
-            // Park Booking Controllers
-            _services[typeof(CitizenController)] = () => new CitizenController(
-                GetService(typeof(IParkBookingService)) as IParkBookingService
-            );
-
-            _services[typeof(SlotsController)] = () => new SlotsController(
-                GetService(typeof(IParkBookingService)) as IParkBookingService
-            );
-
-            _services[typeof(BookingsController)] = () => new BookingsController(
-                GetService(typeof(IParkBookingService)) as IParkBookingService
-            );
-
-            _services[typeof(DepartmentController)] = () => new DepartmentController(
-                GetService(typeof(IParkBookingService)) as IParkBookingService
-            );
-
-            _services[typeof(UtilitiesController)] = () => new UtilitiesController(
-                GetService(typeof(IParkBookingService)) as IParkBookingService
-            );
-
-            _services[typeof(ReportsController)] = () => new ReportsController(
-                GetService(typeof(IParkBookingService)) as IParkBookingService
-            );
-
-            // Voter Controllers
-            _services[typeof(VotersController)] = () => new VotersController(
-                GetService(typeof(IVoterService)) as IVoterService
-            );
-
-            // (Optional) Diagnostics controller if you add one:
-            // _services[typeof(DiagnosticsController)] = () => new DiagnosticsController(
-            //     GetService(typeof(IOracleDiagnosticsRepository)) as IOracleDiagnosticsRepository
-            // );
         }
 
-        public IDependencyScope BeginScope()
+        private void RegisterDuplicateVoters()
         {
-            return new SimpleDependencyScope(this);
+            // Voter module must use WS connection string (OracleDb)
+            var voterConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDb");
+
+            _factories[typeof(IVoterRepository)] = () => new VoterRepository(
+                voterConnFactory
+            );
+            _factories[typeof(IVoterService)] = () => new VoterService(
+                GetService(typeof(IVoterRepository)) as IVoterRepository
+            );
+            _factories[typeof(VotersController)] = () => new VotersController(
+                GetService(typeof(IVoterService)) as IVoterService
+            );
+        }
+
+        private void RegisterDepositManager()
+        {
+            _factories[typeof(IDepositRepository)] = () => new DepositRepository(
+                GetService(typeof(IOracleConnectionFactory)) as IOracleConnectionFactory
+            );
+
+            // Storage service for consent documents - supports both FTP and Network share
+            var storageType = System.Configuration.ConfigurationManager.AppSettings["Storage_Type"] ?? "ftp";
+            
+            if (storageType.Equals("network", StringComparison.OrdinalIgnoreCase))
+            {
+                // Use network share storage (recommended for internal LAN)
+                _factories[typeof(IFtpStorageService)] = () => new NetworkStorageService();
+                System.Diagnostics.Trace.TraceInformation("Storage configured: Network Share");
+            }
+            else
+            {
+                // Use FTP storage (fallback)
+                _factories[typeof(IFtpStorageService)] = () => new FtpStorageService();
+                System.Diagnostics.Trace.TraceInformation("Storage configured: FTP");
+            }
+
+            _factories[typeof(IBankService)] = () => new BankService(
+                GetService(typeof(IDepositRepository)) as IDepositRepository,
+                GetService(typeof(IFtpStorageService)) as IFtpStorageService
+            );
+            _factories[typeof(SmkcApi.Services.DepositManager.IAccountService)] = () => new SmkcApi.Services.DepositManager.AccountService(
+                GetService(typeof(IDepositRepository)) as IDepositRepository,
+                GetService(typeof(IFtpStorageService)) as IFtpStorageService
+            );
+            _factories[typeof(ICommissionerService)] = () => new CommissionerService(
+                GetService(typeof(IDepositRepository)) as IDepositRepository,
+                GetService(typeof(IFtpStorageService)) as IFtpStorageService
+            );
+
+            _factories[typeof(BankController)] = () => new BankController(
+                GetService(typeof(IBankService)) as IBankService
+            );
+            _factories[typeof(SmkcApi.Controllers.DepositManager.AccountController)] = () => new SmkcApi.Controllers.DepositManager.AccountController(
+                GetService(typeof(SmkcApi.Services.DepositManager.IAccountService)) as SmkcApi.Services.DepositManager.IAccountService
+            );
+            _factories[typeof(CommissionerController)] = () => new CommissionerController(
+                GetService(typeof(ICommissionerService)) as ICommissionerService
+            );
+            
+            // Consent Document Controller (common endpoint for all roles)
+            _factories[typeof(ConsentDocumentController)] = () => new ConsentDocumentController(
+                GetService(typeof(IFtpStorageService)) as IFtpStorageService
+            );
+            
+            // FTP Diagnostic Controller (for troubleshooting network routing)
+            _factories[typeof(FtpDiagnosticController)] = () => new FtpDiagnosticController();
+        }
+
+        /// <summary>
+        /// Register authentication dependencies (AuthController, AuthService, AuthRepository)
+        /// Auth uses ULBERP connection string for user authentication
+        /// </summary>
+        private void RegisterAuth()
+        {
+            // Auth module must use ULBERP connection string
+            var authConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbUlberp");
+
+            _factories[typeof(IAuthRepository)] = () => new AuthRepository(authConnFactory);
+            _factories[typeof(IAuthService)] = () => new AuthService(
+                GetService(typeof(IAuthRepository)) as IAuthRepository
+            );
+            _factories[typeof(AuthController)] = () => new AuthController(
+                GetService(typeof(IAuthService)) as IAuthService
+            );
+        }
+
+        /// <summary>
+        /// Register booth mapping dependencies (controllers, services, repositories)
+        /// Auth uses ULBERP connection string for user authentication
+        /// Booth operations use WEBSITE (ws/ws) connection string
+        /// </summary>
+        private void RegisterBoothMapping()
+        {
+            // Booth Auth Repository - uses ULBERP schema for authentication
+            _factories[typeof(IBoothAuthRepository)] = () => new BoothAuthRepository();
+
+            // Booth Repository - uses WEBSITE schema for booth operations
+            _factories[typeof(IBoothRepository)] = () => new BoothRepository();
+
+            // Booth Auth Service
+            _factories[typeof(IBoothAuthService)] = () => new BoothAuthService(
+                GetService(typeof(IBoothAuthRepository)) as IBoothAuthRepository
+            );
+
+            // Booth Mapping Service
+            _factories[typeof(IBoothMappingService)] = () => new BoothMappingService(
+                GetService(typeof(IBoothRepository)) as IBoothRepository
+            );
+
+            // Booth Auth Controller
+            _factories[typeof(BoothAuthController)] = () => new BoothAuthController(
+                GetService(typeof(IBoothAuthService)) as IBoothAuthService
+            );
+
+            // Booth Mapping Controller
+            _factories[typeof(BoothMappingController)] = () => new BoothMappingController(
+                GetService(typeof(IBoothMappingService)) as IBoothMappingService
+            );
+        }
+
+        /// <summary>
+        /// Register voting statistics dependencies
+        /// Uses WEBSITE connection string (website/website)
+        /// Requires SHA-256 authentication
+        /// </summary>
+        private void RegisterVotingStatistics()
+        {
+            // Voting Statistics Repository - uses WEBSITE schema
+            _factories[typeof(IVotingStatisticsRepository)] = () => new VotingStatisticsRepository(
+                GetService(typeof(IOracleConnectionFactory)) as IOracleConnectionFactory
+            );
+
+            // Voting Statistics Controller
+            _factories[typeof(VotingStatisticsController)] = () => new VotingStatisticsController(
+                GetService(typeof(IVotingStatisticsRepository)) as IVotingStatisticsRepository
+            );
         }
 
         public object GetService(Type serviceType)
         {
-            if (_services.ContainsKey(serviceType))
-            {
-                return _services[serviceType]();
-            }
-            return null;
+            return _factories.ContainsKey(serviceType) ? _factories[serviceType]() : null;
         }
 
         public IEnumerable<object> GetServices(Type serviceType)
@@ -175,9 +243,14 @@ namespace SmkcApi
             return service != null ? new[] { service } : new object[0];
         }
 
+        public IDependencyScope BeginScope()
+        {
+            return new SimpleDependencyScope(this);
+        }
+
         public void Dispose()
         {
-            _services.Clear();
+            _factories.Clear();
         }
     }
 

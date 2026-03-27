@@ -1,0 +1,87 @@
+{
+  "info": {
+    "name": "Deposit Manager - SIMPLE TEST",
+    "_postman_id": "simple-test-001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "TEST 1 - Query Param (WORKING)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const timestamp = Math.floor(Date.now() / 1000).toString();",
+              "const apiKey = 'TEST_API_KEY_12345678901234567890123456789012';",
+              "const secretKey = 'TEST_SECRET_KEY_67890ABCDEFGHIJ1234567890';",
+              "const method = 'GET';",
+              "const uri = '/api/deposits/bank/requirements?status=published';",
+              "const body = '';",
+              "",
+              "console.log('=== TEST 1: Query Parameter ===');",
+              "console.log('URI:', uri);",
+              "",
+              "const stringToSign = method + uri + body + timestamp + apiKey;",
+              "const signature = CryptoJS.HmacSHA256(stringToSign, secretKey).toString(CryptoJS.enc.Base64);",
+              "",
+              "console.log('String to Sign:', stringToSign.substring(0, 150));",
+              "console.log('Signature:', signature);",
+              "",
+              "pm.variables.set('timestamp', timestamp);",
+              "pm.variables.set('signature', signature);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-API-Key", "value": "TEST_API_KEY_12345678901234567890123456789012"},
+          {"key": "X-Timestamp", "value": "{{timestamp}}"},
+          {"key": "X-Signature", "value": "{{signature}}"}
+        ],
+        "url": "http://localhost:57031/api/deposits/bank/requirements?status=published"
+      }
+    },
+    {
+      "name": "TEST 2 - Path Param (FAILING)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const timestamp = Math.floor(Date.now() / 1000).toString();",
+              "const apiKey = 'TEST_API_KEY_12345678901234567890123456789012';",
+              "const secretKey = 'TEST_SECRET_KEY_67890ABCDEFGHIJ1234567890';",
+              "const method = 'GET';",
+              "const uri = '/api/deposits/bank/requirements/REQ0000000003';",
+              "const body = '';",
+              "",
+              "console.log('=== TEST 2: Path Parameter ===');",
+              "console.log('URI:', uri);",
+              "",
+              "const stringToSign = method + uri + body + timestamp + apiKey;",
+              "const signature = CryptoJS.HmacSHA256(stringToSign, secretKey).toString(CryptoJS.enc.Base64);",
+              "",
+              "console.log('String to Sign:', stringToSign.substring(0, 150));",
+              "console.log('Signature:', signature);",
+              "",
+              "pm.variables.set('timestamp', timestamp);",
+              "pm.variables.set('signature', signature);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-API-Key", "value": "TEST_API_KEY_12345678901234567890123456789012"},
+          {"key": "X-Timestamp", "value": "{{timestamp}}"},
+          {"key": "X-Signature", "value": "{{signature}}"}
+        ],
+        "url": "http://localhost:57031/api/deposits/bank/requirements/REQ0000000003"
+      }
+    }
+  ]
+}

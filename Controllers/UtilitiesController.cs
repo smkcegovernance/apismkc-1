@@ -14,7 +14,6 @@ namespace SmkcApi.Controllers
     /// </summary>
     [RoutePrefix("api/utils")]
     [ShaAuthentication]
-    [IPWhitelist]
     [RateLimit(maxRequests: 100, timeWindowMinutes: 1)]
     public class UtilitiesController : ApiController
     {
@@ -113,7 +112,6 @@ namespace SmkcApi.Controllers
     /// </summary>
     [RoutePrefix("api/reports")]
     [ShaAuthentication]
-    [IPWhitelist]
     [RateLimit(maxRequests: 50, timeWindowMinutes: 1)]
     public class ReportsController : ApiController
     {

@@ -1,3 +1,3 @@
 {
-    "dotnet.preferCSharpExtension": true
+    "chat.agent.maxRequests": 500
 }

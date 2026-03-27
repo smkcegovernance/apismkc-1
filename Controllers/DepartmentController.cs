@@ -14,7 +14,6 @@ namespace SmkcApi.Controllers
     /// </summary>
     [RoutePrefix("api/department")]
     [ShaAuthentication]
-    [IPWhitelist]
     [RateLimit(maxRequests: 100, timeWindowMinutes: 1)]
     public class DepartmentController : ApiController
     {

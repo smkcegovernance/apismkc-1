@@ -73,7 +73,8 @@ namespace SmkcApi.Infrastructure
             var numberList = numbers
                 .Where(n => !string.IsNullOrWhiteSpace(n))
                 .Select(n => new string((n ?? "").Where(char.IsDigit).ToArray()))
-                .Where(n => n.Length >= 10)
+                .Select(n => n.Length == 12 && n.StartsWith("91") ? n.Substring(2) : n)
+                .Where(n => n.Length == 10)
                 .ToList();
 
             if (!numberList.Any())

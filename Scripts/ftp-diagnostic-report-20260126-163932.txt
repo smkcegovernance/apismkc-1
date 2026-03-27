@@ -1,0 +1,22 @@
+﻿FTP Network Diagnostic Report
+Generated: 2026-01-26 16:39:32
+Server: DESKTOP-9008C3R
+Target: ftp://192.168.40.47:21
+
+Local IPs:
+  - 169.254.213.150 (Ethernet 3)
+  - 169.254.30.124 (Ethernet 2)
+  - 169.254.15.242 (Local Area Connection* 2)
+  - 192.168.40.159 (Ethernet)
+  - 169.254.210.54 (Local Area Connection* 1)
+  - 169.254.153.154 (Wi-Fi)
+
+
+Results:
+  - On 192.168.40.x network: True
+  - PING successful: \\DESKTOP-9008C3R\root\cimv2:Win32_PingStatus.Address="192.168.40.47",BufferSize=32,NoFragmentation=false,RecordRoute=0,ResolveAddressNames=false,SourceRoute="",SourceRouteType=0,Timeout=4000,TimestampRoute=0,TimeToLive=80,TypeofService=0 \\DESKTOP-9008C3R\root\cimv2:Win32_PingStatus.Address="192.168.40.47",BufferSize=32,NoFragmentation=false,RecordRoute=0,ResolveAddressNames=false,SourceRoute="",SourceRouteType=0,Timeout=4000,TimestampRoute=0,TimeToLive=80,TypeofService=0
+  - TCP connection successful: True
+
+Network Route:
+  ? 192.168.40.47
+

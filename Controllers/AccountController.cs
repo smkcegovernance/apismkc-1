@@ -1,22 +1,28 @@
 using System;
 using System.Threading.Tasks;
 using System.Web.Http;
-using System.Net; // added
+using System.Net;
 using SmkcApi.Models;
 using SmkcApi.Security;
 using SmkcApi.Services;
 
 namespace SmkcApi.Controllers
 {
+    // NOTE: This controller was conflicting by name with
+    // Controllers/DepositManager/AccountController.cs and causing
+    // routing issues for /api/deposits/account/... endpoints.
+    //
+    // It has been renamed to avoid duplicate Web API controller
+    // type names. All routes keep the same URL surface.
+
     [RoutePrefix("api/accounts")]
     [ShaAuthentication]
-    [IPWhitelist]
     [RateLimit(maxRequests: 100, timeWindowMinutes: 1)]
-    public class AccountController : ApiController
+    public class CoreAccountController : ApiController
     {
         private readonly IAccountService _accountService;
 
-        public AccountController(IAccountService accountService)
+        public CoreAccountController(IAccountService accountService)
         {
             _accountService = accountService ?? throw new ArgumentNullException(nameof(accountService));
         }
@@ -227,7 +233,7 @@ namespace SmkcApi.Controllers
 
         private void LogError(string action, Exception ex)
         {
-            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC - ACCOUNT_CONTROLLER_{action.ToUpper()}_ERROR: {ex.Message}";
+            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC - CORE_ACCOUNT_CONTROLLER_{action.ToUpper()}_ERROR: {ex.Message}";
             System.Diagnostics.Trace.TraceError(logEntry);
             
             // Additional security logging with request context
@@ -237,8 +243,8 @@ namespace SmkcApi.Controllers
                 var maskedApiKey = SecurityHelper.MaskSensitiveData(apiKey);
                 var requestId = Request.Properties.ContainsKey("RequestId") ? Request.Properties["RequestId"].ToString() : "Unknown";
                 
-                var securityLogEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC - SECURITY_ERROR - Action: {action}, " +
-                                      $"ApiKey: {maskedApiKey}, RequestId: {requestId}, Error: {ex.Message}";
+                var securityLogEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC - SECURITY_ERROR - Controller: CoreAccountController, " +
+                                      $"Action: {action}, ApiKey: {maskedApiKey}, RequestId: {requestId}, Error: {ex.Message}";
                 System.Diagnostics.Trace.TraceError(securityLogEntry);
             }
         }

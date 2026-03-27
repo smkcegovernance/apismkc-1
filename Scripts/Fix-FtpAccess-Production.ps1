@@ -1,0 +1,200 @@
+# ?? Fix FTP Access on Production Server (SMKC-WEBSERVER)
+# Run this script as Administrator on the production server
+
+Write-Host "??????????????????????????????????????????????????????????????" -ForegroundColor Cyan
+Write-Host "?  FTP Access Fix for SMKC-WEBSERVER (192.168.40.35)        ?" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????????" -ForegroundColor Cyan
+Write-Host ""
+
+$ftpHost = "192.168.40.47"
+$ftpPort = 21
+
+# Check if running as Administrator
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdmin) {
+    Write-Host "? ERROR: This script must be run as Administrator!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Right-click PowerShell and select 'Run as Administrator'" -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host "? Running as Administrator" -ForegroundColor Green
+Write-Host ""
+
+# Step 1: Test current connectivity
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+Write-Host "Step 1: Testing Current FTP Connectivity" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+
+$tcpTest = Test-NetConnection -ComputerName $ftpHost -Port $ftpPort -WarningAction SilentlyContinue
+if ($tcpTest.TcpTestSucceeded) {
+    Write-Host "  ? FTP connection already working!" -ForegroundColor Green
+    Write-Host "  No firewall fix needed. Issue may be elsewhere." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Run IIS app pool fix instead..." -ForegroundColor Yellow
+    exit 0
+} else {
+    Write-Host "  ? FTP connection blocked (as expected)" -ForegroundColor Red
+    Write-Host "  Proceeding with firewall fix..." -ForegroundColor Yellow
+}
+Write-Host ""
+
+# Step 2: Add outbound firewall rule
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+Write-Host "Step 2: Creating Outbound Firewall Rule" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+
+try {
+    # Remove existing rule if it exists
+    Remove-NetFirewallRule -DisplayName "SMKCAPI - FTP to 192.168.40.47" -ErrorAction SilentlyContinue
+    
+    # Create new rule for FTP control port
+    New-NetFirewallRule -DisplayName "SMKCAPI - FTP to 192.168.40.47" `
+        -Description "Allow SMKCAPI to connect to FTP server at 192.168.40.47" `
+        -Direction Outbound `
+        -Protocol TCP `
+        -RemoteAddress $ftpHost `
+        -RemotePort $ftpPort `
+        -Action Allow `
+        -Enabled True `
+        -Program "C:\Windows\System32\inetsrv\w3wp.exe" | Out-Null
+    
+    Write-Host "  ? Created firewall rule: SMKCAPI - FTP to 192.168.40.47" -ForegroundColor Green
+    
+    # Create rule for passive mode data connections
+    Remove-NetFirewallRule -DisplayName "SMKCAPI - FTP Passive Mode" -ErrorAction SilentlyContinue
+    
+    New-NetFirewallRule -DisplayName "SMKCAPI - FTP Passive Mode" `
+        -Description "Allow SMKCAPI FTP passive mode data connections" `
+        -Direction Outbound `
+        -Protocol TCP `
+        -RemoteAddress $ftpHost `
+        -RemotePort 1024-65535 `
+        -Action Allow `
+        -Enabled True `
+        -Program "C:\Windows\System32\inetsrv\w3wp.exe" | Out-Null
+    
+    Write-Host "  ? Created firewall rule: SMKCAPI - FTP Passive Mode" -ForegroundColor Green
+    
+} catch {
+    Write-Host "  ? Error creating firewall rule: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+Write-Host ""
+
+# Step 3: Test connectivity after firewall rule
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+Write-Host "Step 3: Testing FTP Connection After Firewall Fix" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+
+Start-Sleep -Seconds 2  # Wait for firewall rule to apply
+
+$tcpTestAfter = Test-NetConnection -ComputerName $ftpHost -Port $ftpPort -WarningAction SilentlyContinue
+if ($tcpTestAfter.TcpTestSucceeded) {
+    Write-Host "  ? SUCCESS! FTP port is now accessible" -ForegroundColor Green
+} else {
+    Write-Host "  ? Still cannot connect to FTP port" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Additional steps needed:" -ForegroundColor Yellow
+    Write-Host "  1. Check firewall on FTP server (192.168.40.47)" -ForegroundColor White
+    Write-Host "  2. Ensure FTP service is running on FTP server" -ForegroundColor White
+    Write-Host "  3. Check network switches/routers between servers" -ForegroundColor White
+}
+Write-Host ""
+
+# Step 4: Fix IIS App Pool Identity
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+Write-Host "Step 4: Configuring IIS App Pool Identity" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+
+try {
+    Import-Module WebAdministration -ErrorAction Stop
+    
+    $appPools = Get-ChildItem IIS:\AppPools
+    Write-Host "  Found $($appPools.Count) application pool(s):" -ForegroundColor Yellow
+    
+    foreach ($pool in $appPools) {
+        $currentIdentity = $pool.processModel.identityType
+        Write-Host "    - $($pool.Name): $currentIdentity" -ForegroundColor Gray
+        
+        # Change to NetworkService if it's ApplicationPoolIdentity
+        if ($currentIdentity -eq "ApplicationPoolIdentity") {
+            Write-Host "      Changing to NetworkService..." -ForegroundColor Yellow
+            Set-ItemProperty "IIS:\AppPools\$($pool.Name)" -name processModel.identityType -value NetworkService
+            Write-Host "      ? Changed to NetworkService" -ForegroundColor Green
+            
+            # Recycle the pool
+            Restart-WebAppPool -Name $pool.Name
+            Write-Host "      ? App pool recycled" -ForegroundColor Green
+        }
+    }
+    
+} catch {
+    Write-Host "  ??  Could not modify IIS app pools: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  Manual fix:" -ForegroundColor Yellow
+    Write-Host "    1. Open IIS Manager" -ForegroundColor White
+    Write-Host "    2. Go to Application Pools" -ForegroundColor White
+    Write-Host "    3. Right-click your pool ? Advanced Settings" -ForegroundColor White
+    Write-Host "    4. Identity ? Built-in account ? NetworkService" -ForegroundColor White
+    Write-Host "    5. Recycle the app pool" -ForegroundColor White
+}
+Write-Host ""
+
+# Step 5: Restart IIS
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+Write-Host "Step 5: Restarting IIS" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+
+try {
+    iisreset
+    Write-Host "  ? IIS restarted successfully" -ForegroundColor Green
+} catch {
+    Write-Host "  ??  Could not restart IIS automatically" -ForegroundColor Yellow
+    Write-Host "  Run manually: iisreset" -ForegroundColor White
+}
+Write-Host ""
+
+# Step 6: Final verification
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+Write-Host "Step 6: Final Verification" -ForegroundColor Cyan
+Write-Host "??????????????????????????????????????????????????????????" -ForegroundColor DarkGray
+
+Write-Host "  Waiting for IIS to restart..." -ForegroundColor Yellow
+Start-Sleep -Seconds 5
+
+$finalTest = Test-NetConnection -ComputerName $ftpHost -Port $ftpPort -WarningAction SilentlyContinue
+if ($finalTest.TcpTestSucceeded) {
+    Write-Host "  ? FTP connection successful!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "??????????????????????????????????????????????????????????????" -ForegroundColor Green
+    Write-Host "?  ? FIX COMPLETE - FTP ACCESS ENABLED                       ?" -ForegroundColor Green
+    Write-Host "??????????????????????????????????????????????????????????????" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Next steps:" -ForegroundColor Yellow
+    Write-Host "1. Test API diagnostic: https://smkc.gov.in:8443/api/ftp-diagnostic/test" -ForegroundColor White
+    Write-Host "2. Test upload through Next.js frontend" -ForegroundColor White
+    Write-Host "3. Verify files uploaded to FTP server" -ForegroundColor White
+} else {
+    Write-Host "  ? Still cannot connect to FTP port" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Additional actions required:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  ON FTP SERVER (192.168.40.47):" -ForegroundColor Cyan
+    Write-Host "  1. Verify FTP service is running:" -ForegroundColor White
+    Write-Host "     Get-Service ftpsvc" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  2. Add inbound firewall rule:" -ForegroundColor White
+    Write-Host "     New-NetFirewallRule -DisplayName 'FTP from SMKCAPI' ``" -ForegroundColor Gray
+    Write-Host "         -Direction Inbound -Protocol TCP ``" -ForegroundColor Gray
+    Write-Host "         -RemoteAddress 192.168.40.35 ``" -ForegroundColor Gray
+    Write-Host "         -LocalPort 21 -Action Allow" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  3. Check what's listening on port 21:" -ForegroundColor White
+    Write-Host "     netstat -ano | findstr :21" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  4. Test from production server:" -ForegroundColor White
+    Write-Host "     Test-NetConnection -ComputerName 192.168.40.47 -Port 21" -ForegroundColor Gray
+}
+Write-Host ""

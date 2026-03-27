@@ -361,3 +361,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Google Drive credentials and uploaded files - SENSITIVE
+GoogleDrive/
+
+# NuGet executable
+nuget.exe
+
+# Binary DLLs not managed by NuGet
+Utils/NetISMConverter.dll

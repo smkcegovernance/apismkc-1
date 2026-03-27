@@ -11,6 +11,15 @@ namespace SmkcApi.Models
         public bool PreviewOnly { get; set; } = false; // if true, don't actually send
     }
 
+    // New request model for water connection bill SMS
+    public class WaterBillSmsSendRequest
+    {
+        public string ConnectionNumber { get; set; } // optional
+        public string WardCode { get; set; } // optional
+        public string DivCode { get; set; } // optional
+        public bool PreviewOnly { get; set; } = false;
+    }
+
     public class SmsSendResult
     {
         public string ConnectionNumber { get; set; }
@@ -43,5 +52,16 @@ namespace SmkcApi.Models
         public string QueryType { get; set; }
         public string SearchCriteria { get; set; }
         public DateTime QueryDate { get; set; }
+    }
+
+    // DTO for water bill SMS with customer details
+    public class WaterBillSmsDto
+    {
+        public string ConnectionNumber { get; set; }
+        public string CustomerName { get; set; }
+        public string MobileNumber { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string DueDate { get; set; }
+        public string PaymentUrl { get; set; }
     }
 }
