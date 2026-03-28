@@ -12,6 +12,8 @@ namespace SmkcApi.Repositories
         ApiResponse<object> Account_Login(string userId, string password);
         ApiResponse<object> Commissioner_Login(string userId, string password);
         ApiResponse<object> UnifiedLogin(string userId, string password);
+        ApiResponse<object> GetUserProfile(string userId);
+        ApiResponse<object> ChangePassword(string userId, string oldPassword, string newPassword);
     }
 
     public class AuthRepository : IAuthRepository
@@ -34,6 +36,109 @@ namespace SmkcApi.Repositories
         public ApiResponse<object> UnifiedLogin(string userId, string password)
             => ExecuteUlberp("SP_UNIFIED_LOGIN", userId, password);
 
+        public ApiResponse<object> GetUserProfile(string userId)
+        {
+            try
+            {
+                using (var conn = _connFactory.CreateUlberp())
+                using (var cmd = new OracleCommand("SP_GET_USER_PROFILE", conn))
+                {
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("P_USER_ID", OracleDbType.Varchar2).Value = userId;
+                    cmd.Parameters.Add("O_SUCCESS", OracleDbType.Decimal).Direction = ParameterDirection.Output;
+                    cmd.Parameters.Add("O_MESSAGE", OracleDbType.Varchar2, 4000).Direction = ParameterDirection.Output;
+                    cmd.Parameters.Add("O_USER_DATA", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
+
+                    conn.Open();
+                    cmd.ExecuteNonQuery();
+
+                    var success = GetSuccessOutput(cmd.Parameters["O_SUCCESS"].Value);
+                    var message = GetMessageOutput(cmd.Parameters["O_MESSAGE"].Value, "Unknown error");
+
+                    object data = null;
+                    var cursorParam = cmd.Parameters["O_USER_DATA"];
+                    if (cursorParam != null && cursorParam.Value is OracleRefCursor)
+                    {
+                        using (var reader = ((OracleRefCursor)cursorParam.Value).GetDataReader())
+                        {
+                            if (reader.HasRows)
+                            {
+                                var table = new DataTable();
+                                table.Load(reader);
+
+                                if (table.Rows.Count > 0)
+                                {
+                                    var row = table.Rows[0];
+                                    data = new
+                                    {
+                                        userId = GetCol(row, "USER_ID"),
+                                        role = GetCol(row, "ROLE"),
+                                        name = GetCol(row, "NAME"),
+                                        status = GetCol(row, "STATUS"),
+                                        bankId = GetCol(row, "BANK_ID"),
+                                        bankName = GetCol(row, "BANK_NAME"),
+                                        roleId = GetRoleIdOutput(row)
+                                    };
+                                }
+                            }
+                        }
+                    }
+
+                    return new ApiResponse<object>
+                    {
+                        Success = success,
+                        Message = message,
+                        Data = data
+                    };
+                }
+            }
+            catch (OracleException ex)
+            {
+                return ApiResponse<object>.CreateError("Database error: " + ex.Message, "DBERR");
+            }
+            catch (Exception ex)
+            {
+                return ApiResponse<object>.CreateError("Internal server error: " + ex.Message, "INTERNAL");
+            }
+        }
+
+        public ApiResponse<object> ChangePassword(string userId, string oldPassword, string newPassword)
+        {
+            try
+            {
+                using (var conn = _connFactory.CreateUlberp())
+                using (var cmd = new OracleCommand("SP_CHANGE_USER_PASSWORD", conn))
+                {
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("P_USER_ID", OracleDbType.Varchar2).Value = userId;
+                    cmd.Parameters.Add("P_OLD_PASSWORD", OracleDbType.Varchar2).Value = oldPassword;
+                    cmd.Parameters.Add("P_NEW_PASSWORD", OracleDbType.Varchar2).Value = newPassword;
+                    cmd.Parameters.Add("O_SUCCESS", OracleDbType.Decimal).Direction = ParameterDirection.Output;
+                    cmd.Parameters.Add("O_MESSAGE", OracleDbType.Varchar2, 4000).Direction = ParameterDirection.Output;
+
+                    conn.Open();
+                    cmd.ExecuteNonQuery();
+
+                    return new ApiResponse<object>
+                    {
+                        Success = GetSuccessOutput(cmd.Parameters["O_SUCCESS"].Value),
+                        Message = GetMessageOutput(cmd.Parameters["O_MESSAGE"].Value, "Unknown error"),
+                        Data = null
+                    };
+                }
+            }
+            catch (OracleException ex)
+            {
+                return ApiResponse<object>.CreateError("Database error: " + ex.Message, "DBERR");
+            }
+            catch (Exception ex)
+            {
+                return ApiResponse<object>.CreateError("Internal server error: " + ex.Message, "INTERNAL");
+            }
+        }
+
         private ApiResponse<object> ExecuteUlberp(string spName, string userId, string password)
         {
             try
@@ -54,26 +159,8 @@ namespace SmkcApi.Repositories
                     cmd.ExecuteNonQuery();
 
                     // Handle Oracle-specific data types properly
-                    var successParam = cmd.Parameters["O_SUCCESS"].Value;
-                    bool success = false;
-                    
-                    if (successParam != null && successParam != DBNull.Value)
-                    {
-                        // Handle OracleDecimal properly
-                        if (successParam is OracleDecimal)
-                        {
-                            success = ((OracleDecimal)successParam).ToInt32() == 1;
-                        }
-                        else
-                        {
-                            success = Convert.ToInt32(successParam) == 1;
-                        }
-                    }
-                    
-                    var messageParam = cmd.Parameters["O_MESSAGE"].Value;
-                    string message = messageParam != null && messageParam != DBNull.Value 
-                        ? Convert.ToString(messageParam) 
-                        : "Unknown error";
+                    var success = GetSuccessOutput(cmd.Parameters["O_SUCCESS"].Value);
+                    var message = GetMessageOutput(cmd.Parameters["O_MESSAGE"].Value, "Unknown error");
                     
                     object data = null;
                     
@@ -100,6 +187,10 @@ namespace SmkcApi.Repositories
                                     else if (row.Table.Columns.Contains("BANK_CODE") && row["BANK_CODE"] != DBNull.Value)
                                         bankId = row["BANK_CODE"].ToString();
                                     
+                                    string bankName = null;
+                                    if (row.Table.Columns.Contains("BANK_NAME") && row["BANK_NAME"] != DBNull.Value)
+                                        bankName = row["BANK_NAME"].ToString();
+                                    
                                     // Build response object with all available fields
                                     var responseData = new
                                     {
@@ -108,11 +199,8 @@ namespace SmkcApi.Repositories
                                         name = row["NAME"]?.ToString(),
                                         status = row["STATUS"]?.ToString(),
                                         bankId = bankId,
-                                        roleId = row.Table.Columns.Contains("ROLE_ID") && row["ROLE_ID"] != DBNull.Value
-                                            ? (row["ROLE_ID"] is OracleDecimal 
-                                                ? ((OracleDecimal)row["ROLE_ID"]).ToInt32() 
-                                                : Convert.ToInt32(row["ROLE_ID"]))
-                                            : (int?)null
+                                        bankName = bankName,
+                                        roleId = GetRoleIdOutput(row)
                                     };
                                     
                                     data = responseData;
@@ -137,6 +225,54 @@ namespace SmkcApi.Repositories
             {
                 return ApiResponse<object>.CreateError("Internal server error: " + ex.Message, "INTERNAL");
             }
+        }
+
+        private static bool GetSuccessOutput(object successParam)
+        {
+            if (successParam == null || successParam == DBNull.Value)
+            {
+                return false;
+            }
+
+            if (successParam is OracleDecimal)
+            {
+                return ((OracleDecimal)successParam).ToInt32() == 1;
+            }
+
+            return Convert.ToInt32(successParam) == 1;
+        }
+
+        private static string GetMessageOutput(object messageParam, string fallback)
+        {
+            if (messageParam == null || messageParam == DBNull.Value)
+            {
+                return fallback;
+            }
+
+            return Convert.ToString(messageParam);
+        }
+
+        private static string GetCol(DataRow row, string col)
+        {
+            if (!row.Table.Columns.Contains(col) || row[col] == DBNull.Value)
+            {
+                return null;
+            }
+
+            return row[col].ToString();
+        }
+
+        private static int? GetRoleIdOutput(DataRow row)
+        {
+            if (!row.Table.Columns.Contains("ROLE_ID") || row["ROLE_ID"] == DBNull.Value)
+            {
+                return null;
+            }
+
+            var roleId = row["ROLE_ID"];
+            return roleId is OracleDecimal
+                ? ((OracleDecimal)roleId).ToInt32()
+                : Convert.ToInt32(roleId);
         }
     }
 }
