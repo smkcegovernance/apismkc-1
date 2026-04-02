@@ -107,35 +107,53 @@ namespace SmkcApi.Repositories
         {
             try
             {
-                using (var conn = _connFactory.CreateUlberp())
-                using (var cmd = new OracleCommand("SP_CHANGE_USER_PASSWORD", conn))
-                {
-                    cmd.CommandType = CommandType.StoredProcedure;
-
-                    cmd.Parameters.Add("P_USER_ID", OracleDbType.Varchar2).Value = userId;
-                    cmd.Parameters.Add("P_OLD_PASSWORD", OracleDbType.Varchar2).Value = oldPassword;
-                    cmd.Parameters.Add("P_NEW_PASSWORD", OracleDbType.Varchar2).Value = newPassword;
-                    cmd.Parameters.Add("O_SUCCESS", OracleDbType.Decimal).Direction = ParameterDirection.Output;
-                    cmd.Parameters.Add("O_MESSAGE", OracleDbType.Varchar2, 4000).Direction = ParameterDirection.Output;
-
-                    conn.Open();
-                    cmd.ExecuteNonQuery();
-
-                    return new ApiResponse<object>
-                    {
-                        Success = GetSuccessOutput(cmd.Parameters["O_SUCCESS"].Value),
-                        Message = GetMessageOutput(cmd.Parameters["O_MESSAGE"].Value, "Unknown error"),
-                        Data = null
-                    };
-                }
+                return ExecuteChangePasswordProcedure("SP_CHANGE_USER_PASSWORD", userId, oldPassword, newPassword);
             }
             catch (OracleException ex)
             {
+                // Fallback for schema visibility issues (PLS-00201)
+                if (ex.Number == 6550 && ex.Message != null && ex.Message.IndexOf("SP_CHANGE_USER_PASSWORD", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    try
+                    {
+                        return ExecuteChangePasswordProcedure("ULBERP.SP_CHANGE_USER_PASSWORD", userId, oldPassword, newPassword);
+                    }
+                    catch (OracleException fallbackEx)
+                    {
+                        return ApiResponse<object>.CreateError("Database error: " + fallbackEx.Message, "DBERR");
+                    }
+                }
+
                 return ApiResponse<object>.CreateError("Database error: " + ex.Message, "DBERR");
             }
             catch (Exception ex)
             {
                 return ApiResponse<object>.CreateError("Internal server error: " + ex.Message, "INTERNAL");
+            }
+        }
+
+        private ApiResponse<object> ExecuteChangePasswordProcedure(string procedureName, string userId, string oldPassword, string newPassword)
+        {
+            using (var conn = _connFactory.CreateUlberp())
+            using (var cmd = new OracleCommand(procedureName, conn))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                cmd.Parameters.Add("P_USER_ID", OracleDbType.Varchar2).Value = userId;
+                cmd.Parameters.Add("P_OLD_PASSWORD", OracleDbType.Varchar2).Value = oldPassword;
+                cmd.Parameters.Add("P_NEW_PASSWORD", OracleDbType.Varchar2).Value = newPassword;
+                cmd.Parameters.Add("O_SUCCESS", OracleDbType.Decimal).Direction = ParameterDirection.Output;
+                cmd.Parameters.Add("O_MESSAGE", OracleDbType.Varchar2, 4000).Direction = ParameterDirection.Output;
+
+                conn.Open();
+                cmd.ExecuteNonQuery();
+
+                return new ApiResponse<object>
+                {
+                    Success = GetSuccessOutput(cmd.Parameters["O_SUCCESS"].Value),
+                    Message = GetMessageOutput(cmd.Parameters["O_MESSAGE"].Value, "Unknown error"),
+                    Data = null
+                };
             }
         }
 

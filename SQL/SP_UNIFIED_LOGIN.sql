@@ -1,9 +1,9 @@
 -- =====================================================
 -- Stored Procedure: SP_UNIFIED_LOGIN
 -- Description: Unified login for all user types (Bank, Account, Commissioner)
---              Returns ROLE_ID along with user details
+--              Uses USERROLEDET for role resolution and TBL_BANK only for bank users
 -- Database: ULBERP
--- Table: ULBERP.USERDET
+-- Tables: ULBERP.USERDET, ULBERP.USERROLEDET, ABAS.TBL_BANK
 -- Author: SMKC API Team
 -- Date: January 2025
 -- =====================================================
@@ -24,6 +24,8 @@ AS
   V_ROLE_ID NUMBER;
   V_STORED_PASSWORD VARCHAR2(1000);
   V_DECODED_PASSWORD VARCHAR2(1000);
+  V_BANK_ID VARCHAR2(100);
+  V_BANK_NAME VARCHAR2(300);
 BEGIN
   -- Validate input parameters
   IF P_USER_ID IS NULL OR P_PASSWORD IS NULL THEN
@@ -39,16 +41,12 @@ BEGIN
       USER_ID,
       EMP_NAME,           -- Using EMP_NAME instead of USER_NAME
       USER_STATUS,
-      USER_PASSWD,
-      USER_ROLE,          -- Assuming role is stored in USER_ROLE column
-      USER_ROLE_ID        -- Assuming role ID is stored in USER_ROLE_ID column
+      USER_PASSWD
     INTO 
       V_USER_ID,
       V_EMP_NAME,
       V_STATUS,
-      V_STORED_PASSWORD,
-      V_ROLE,
-      V_ROLE_ID
+      V_STORED_PASSWORD
     FROM ULBERP.USERDET
     WHERE UPPER(TRIM(USER_ID)) = UPPER(TRIM(P_USER_ID));
 
@@ -98,6 +96,54 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Resolve role from USERROLEDET
+  BEGIN
+    SELECT MAX(DEPT_CODE)
+    INTO V_ROLE_ID
+    FROM ULBERP.USERROLEDET
+    WHERE UPPER(TRIM(USER_ID)) = UPPER(TRIM(P_USER_ID));
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      O_SUCCESS := 0;
+      O_MESSAGE := 'User role not found';
+      OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
+      RETURN;
+    WHEN OTHERS THEN
+      O_SUCCESS := 0;
+      O_MESSAGE := 'Error fetching user role: ' || SQLERRM;
+      OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
+      RETURN;
+  END;
+
+  V_BANK_ID := NULL;
+  V_BANK_NAME := NULL;
+
+  CASE V_ROLE_ID
+    WHEN 1 THEN V_ROLE := 'commissioner';
+    WHEN 2 THEN V_ROLE := 'account';
+    WHEN 3 THEN V_ROLE := 'bank';
+    ELSE V_ROLE := 'unknown';
+  END CASE;
+
+  -- Fetch bank details only for bank users
+  IF V_ROLE_ID = 3 THEN
+    BEGIN
+      SELECT B.BANK_ID, B.BANK_NAME
+      INTO V_BANK_ID, V_BANK_NAME
+      FROM ABAS.TBL_BANK B
+      WHERE UPPER(TRIM(B.BANK_ID)) = UPPER(TRIM(V_USER_ID));
+    EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        V_BANK_ID := V_USER_ID;
+        V_BANK_NAME := NULL;
+      WHEN OTHERS THEN
+        O_SUCCESS := 0;
+        O_MESSAGE := 'Error fetching bank details: ' || SQLERRM;
+        OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
+        RETURN;
+    END;
+  END IF;
+
   -- Login successful - return user data with role ID
   O_SUCCESS := 1;
   O_MESSAGE := 'Login successful';
@@ -108,6 +154,8 @@ BEGIN
       V_ROLE AS ROLE,
       V_EMP_NAME AS NAME,
       V_STATUS AS STATUS,
+      V_BANK_ID AS BANK_ID,
+      V_BANK_NAME AS BANK_NAME,
       V_ROLE_ID AS ROLE_ID     -- Role ID: 1=Commissioner, 2=Account, 3=Bank
     FROM DUAL;
 
