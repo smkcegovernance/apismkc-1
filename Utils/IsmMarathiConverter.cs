@@ -72,11 +72,15 @@ namespace SmkcApi.Utils
         }
 
         private static bool ContainsDevanagari(string s)
-            => s.Any(ch => ch >= '\u0900' && ch <= '\u097F');
+        {
+            return s.Any(ch => ch >= '\u0900' && ch <= '\u097F');
+        }
 
         // Heuristic: ISM mojibake typically shows lots of extended Latin like ¯ Ö Ï ê ´ Þ Û ú ¸ ü ¾ etc.
         private static bool LooksLegacyIsmGlyphs(string s)
-            => s.Any(ch => ch > 0x7F) && !ContainsDevanagari(s);
+        {
+            return s.Any(ch => ch > 0x7F) && !ContainsDevanagari(s);
+        }
 
         // Rough density: fraction of chars in U+0900..U+097F
         private static double ScoreDevanagari(string s)

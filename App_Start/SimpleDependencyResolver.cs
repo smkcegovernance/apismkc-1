@@ -64,11 +64,21 @@ namespace SmkcApi.App_Start
                 new SmkcApi.Services.WaterService(
                     GetService(typeof(SmkcApi.Repositories.IWaterRepository)) as SmkcApi.Repositories.IWaterRepository
                 );
-            
+
+            // Water Dashboard: uses WS schema (OracleDb connection string)
+            var wsConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDb");
+            _factories[typeof(SmkcApi.Repositories.IWaterDashboardRepository)] = () =>
+                new SmkcApi.Repositories.WaterDashboardRepository(wsConnFactory);
+            _factories[typeof(SmkcApi.Services.IWaterDashboardService)] = () =>
+                new SmkcApi.Services.WaterDashboardService(
+                    GetService(typeof(SmkcApi.Repositories.IWaterDashboardRepository)) as SmkcApi.Repositories.IWaterDashboardRepository
+                );
+
             _factories[typeof(SmkcApi.Controllers.WaterController)] = () =>
                 new SmkcApi.Controllers.WaterController(
                     GetService(typeof(SmkcApi.Services.IWaterService)) as SmkcApi.Services.IWaterService,
-                    GetService(typeof(SmkcApi.Services.ISmsService)) as SmkcApi.Services.ISmsService
+                    GetService(typeof(SmkcApi.Services.ISmsService)) as SmkcApi.Services.ISmsService,
+                    GetService(typeof(SmkcApi.Services.IWaterDashboardService)) as SmkcApi.Services.IWaterDashboardService
                 );
 
             _factories[typeof(IAccountRepository)] = () => new AccountRepository();

@@ -14,14 +14,50 @@ namespace SmkcApi.Controllers
     [RateLimit(maxRequests: 120, timeWindowMinutes: 1)]
     public class WaterController : ApiController
     {
-        private readonly IWaterService _waterService;
-        private readonly ISmsService _smsService;
+        private readonly IWaterService          _waterService;
+        private readonly ISmsService            _smsService;
+        private readonly IWaterDashboardService _dashboardService;
 
-        // inject both services
-        public WaterController(IWaterService waterService, ISmsService smsService)
+        public WaterController(IWaterService waterService, ISmsService smsService, IWaterDashboardService dashboardService)
         {
-            _waterService = waterService;
-            _smsService = smsService;
+            _waterService     = waterService;
+            _smsService       = smsService;
+            _dashboardService = dashboardService;
+        }
+
+        // ── Dashboard: Revenue & Collection ──────────────────────────────────
+
+        /// <summary>
+        /// GET /api/water/dashboard/revenue?finyr=2026-2027&amp;wardCode=0&amp;divCode=0
+        /// </summary>
+        [HttpGet, Route("dashboard/revenue")]
+        public async Task<IHttpActionResult> GetRevenueDashboard(
+            string finyr     = "2026-2027",
+            string wardCode  = "0",
+            string divCode   = "0")
+        {
+            var data = await _dashboardService.GetRevenueDashboardAsync(finyr, wardCode, divCode);
+            return Ok(ApiResponse<WaterRevenueDashboard>.CreateSuccess(data, "Revenue dashboard loaded"));
+        }
+
+        /// <summary>
+        /// GET /api/water/dashboard/connections?wardCode=0&amp;divCode=0
+        /// </summary>
+        [HttpGet, Route("dashboard/connections")]
+        public async Task<IHttpActionResult> GetConnectionsDashboard(string wardCode = "0", string divCode = "0")
+        {
+            var data = await _dashboardService.GetConnectionDashboardAsync(wardCode, divCode);
+            return Ok(ApiResponse<WaterConnectionDashboard>.CreateSuccess(data, "Connections dashboard loaded"));
+        }
+
+        /// <summary>
+        /// GET /api/water/dashboard/divisions?wardCode=0
+        /// </summary>
+        [HttpGet, Route("dashboard/divisions")]
+        public async Task<IHttpActionResult> GetDivisions(string wardCode = "0")
+        {
+            var data = await _dashboardService.GetDivisionsAsync(wardCode);
+            return Ok(ApiResponse<List<DivisionItem>>.CreateSuccess(data, "Divisions loaded"));
         }
 
         [HttpPost, Route("sms/send")]

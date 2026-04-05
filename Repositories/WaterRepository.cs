@@ -406,8 +406,8 @@ namespace SmkcApi.Repositories
                 cmd.CommandType = System.Data.CommandType.StoredProcedure;
 
                 cmd.Parameters.Add("p_result", OracleDbType.RefCursor, System.Data.ParameterDirection.Output);
-                cmd.Parameters.Add("p_current_finyr", OracleDbType.Varchar2).Value = "2025-2026"; // or get from config
-                cmd.Parameters.Add("p_current_bc_code", OracleDbType.Varchar2).Value = "18"; // or get from config
+                cmd.Parameters.Add("p_current_finyr", OracleDbType.Varchar2).Value = "2026-2027"; // updated for FY 2026-2027; no current billing cycle yet
+                cmd.Parameters.Add("p_current_bc_code", OracleDbType.Varchar2).Value = "0";  // 0 = no current BC (no bills generated for 2026-2027)
                 cmd.Parameters.Add("p_payment_url", OracleDbType.Varchar2).Value = "https://tinyurl.com/ye89wuk3";
                 cmd.Parameters.Add("p_ws_connno", OracleDbType.Int64).Value = connectionNo;
                 cmd.Parameters.Add("p_ward_code", OracleDbType.Varchar2).Value = wardCode;

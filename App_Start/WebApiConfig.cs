@@ -1,6 +1,7 @@
 using System.Web.Http;
 using System.Web.Http.Cors;
 using System.Configuration;
+using Newtonsoft.Json.Serialization;
 using SmkcApi.Repositories;
 using SmkcApi.Services;
 using SmkcApi.App_Start; // add to resolve SimpleDependencyResolver
@@ -37,6 +38,7 @@ namespace SmkcApi
             // Configure JSON formatting
             config.Formatters.JsonFormatter.SerializerSettings.DateFormatString = "yyyy-MM-ddTHH:mm:ssZ";
             config.Formatters.JsonFormatter.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
+            config.Formatters.JsonFormatter.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
 
             // Register SHA/API-key authentication handler for protected endpoints.
             // Default is enabled to keep DepositManager APIs permanently secured.

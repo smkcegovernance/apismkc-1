@@ -126,6 +126,7 @@
     <Compile Include="Models\TransactionReversalRequest.cs" />
     <Compile Include="Models\VoterModels.cs" />
     <Compile Include="Models\WaterModels.cs" />
+    <Compile Include="Models\WaterDashboardModels.cs" />
     <Compile Include="Repositories\IParkBookingRepository.cs" />
     <Compile Include="Repositories\IVoterRepository.cs" />
     <Compile Include="Repositories\OracleConnectionFactory.cs" />
@@ -133,6 +134,7 @@
     <Compile Include="Repositories\ParkBookingRepository.cs" />
     <Compile Include="Repositories\VoterRepository.cs" />
     <Compile Include="Repositories\WaterRepository.cs" />
+    <Compile Include="Repositories\WaterDashboardRepository.cs" />
     <Compile Include="Security\ShaAuthenticationAttribute.cs" />
     <Compile Include="Security\ApiKeyAuthenticationHandler.cs" />
     <Compile Include="Security\SecurityHelper.cs" />
@@ -189,6 +191,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\VoterService.cs" />
     <Compile Include="Services\WaterService.cs" />
+    <Compile Include="Services\WaterDashboardService.cs" />
     <Compile Include="Utils\DvbwConverter.cs" />
     <Compile Include="Utils\IsmMarathiConverter.cs" />
     <Compile Include="Utils\LegacyIndicConverter.cs" />
@@ -210,6 +213,7 @@
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
+  <Import Project="packages\Microsoft.Net.Compilers.2.10.0\build\Microsoft.Net.Compilers.props" Condition="Exists('packages\Microsoft.Net.Compilers.2.10.0\build\Microsoft.Net.Compilers.props')" />
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != '' and Exists('$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets')" />
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v10.0\WebApplications\Microsoft.WebApplication.targets" Condition="false" />
