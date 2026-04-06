@@ -1,0 +1,222 @@
+{
+  "info": {
+    "name": "SMKC Water API",
+    "_postman_id": "water-api-collection-001",
+    "description": "Postman collection for SMKC Water Controller endpoints. Host: https://smkc.gov.in:5443",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://smkc.gov.in:5443",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Revenue Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/water/dashboard/revenue?finyr=2026-2027&wardCode=0&divCode=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "dashboard", "revenue"],
+              "query": [
+                {
+                  "key": "finyr",
+                  "value": "2026-2027",
+                  "description": "Financial year (e.g. 2026-2027)"
+                },
+                {
+                  "key": "wardCode",
+                  "value": "0",
+                  "description": "Ward code (0 = all wards)"
+                },
+                {
+                  "key": "divCode",
+                  "value": "0",
+                  "description": "Division code (0 = all divisions)"
+                }
+              ]
+            },
+            "description": "GET /api/water/dashboard/revenue\nReturns revenue and collection dashboard data filtered by financial year, ward, and division."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Connections Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/water/dashboard/connections?wardCode=0&divCode=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "dashboard", "connections"],
+              "query": [
+                {
+                  "key": "wardCode",
+                  "value": "0",
+                  "description": "Ward code (0 = all wards)"
+                },
+                {
+                  "key": "divCode",
+                  "value": "0",
+                  "description": "Division code (0 = all divisions)"
+                }
+              ]
+            },
+            "description": "GET /api/water/dashboard/connections\nReturns water connection statistics by ward and division."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Divisions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/water/dashboard/divisions?wardCode=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "dashboard", "divisions"],
+              "query": [
+                {
+                  "key": "wardCode",
+                  "value": "0",
+                  "description": "Ward code (0 = all wards)"
+                }
+              ]
+            },
+            "description": "GET /api/water/dashboard/divisions\nReturns list of divisions for the given ward."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "SMS",
+      "item": [
+        {
+          "name": "Send SMS (by Connection or Ward/Div)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connectionNumber\": \"12345\",\n  \"wardCode\": \"\",\n  \"divCode\": \"\",\n  \"previewOnly\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/water/sms/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "sms", "send"]
+            },
+            "description": "POST /api/water/sms/send\nSend SMS to water connection(s).\n\nProvide either:\n- `connectionNumber` alone, OR\n- `wardCode` + `divCode` to bulk-send.\n\nSet `previewOnly: true` to simulate without actually sending."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Water Bill SMS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connectionNumber\": \"12345\",\n  \"wardCode\": \"\",\n  \"divCode\": \"\",\n  \"previewOnly\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/water/sms/bill/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "sms", "bill", "send"]
+            },
+            "description": "POST /api/water/sms/bill/send\nSend water bill SMS with customer details.\n\nProvide either:\n- `connectionNumber` alone, OR\n- `wardCode` + `divCode` to bulk-send.\n\nSet `previewOnly: true` to simulate without actually sending."
+          },
+          "response": []
+        },
+        {
+          "name": "Send SMS - Bulk by Ward+Div (Preview)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connectionNumber\": \"\",\n  \"wardCode\": \"01\",\n  \"divCode\": \"A\",\n  \"previewOnly\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/water/sms/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "sms", "send"]
+            },
+            "description": "Preview bulk SMS dispatch for a specific ward and division without actually sending. Set previewOnly to false to send."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bill",
+      "item": [
+        {
+          "name": "Fetch Bill by Consumer No",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consumerNo\": \"WTR-0001234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/water/bill/fetch",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "bill", "fetch"]
+            },
+            "description": "POST /api/water/bill/fetch\nFetch the current water bill for a given consumer number.\n\nReturns 404 if no bill found for the consumer."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -97,7 +97,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Global.asax" />
-    <Content Include="SQL\PROC_FIND_DUPLICATE_VOTERS_CORRECTED.sql" />
+    <None Include="SQL\PROC_FIND_DUPLICATE_VOTERS_CORRECTED.sql" />
     <Content Include="Web.config" />
   </ItemGroup>
   <ItemGroup>
@@ -201,10 +201,10 @@
     <Folder Include="Documentation\" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="RefernceDocuments\DuplicateVoterAPI_Endpoints.json" />
-    <Content Include="Postman\DuplicateVoterAPI.postman_environment.json" />
-    <Content Include="Postman\POSTMAN_TESTING_GUIDE.md" />
-    <Content Include="Postman\DuplicateVoterAPI.postman_collection.json" />
+    <None Include="RefernceDocuments\DuplicateVoterAPI_Endpoints.json" />
+    <None Include="Postman\DuplicateVoterAPI.postman_environment.json" />
+    <None Include="Postman\POSTMAN_TESTING_GUIDE.md" />
+    <None Include="Postman\DuplicateVoterAPI.postman_collection.json" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
