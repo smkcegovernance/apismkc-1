@@ -112,6 +112,7 @@
     <Compile Include="Controllers\TransactionController.cs" />
     <Compile Include="Controllers\UtilitiesController.cs" />
     <Compile Include="Controllers\VotersController.cs" />
+    <Compile Include="Controllers\WomenChildWelfareController.cs" />
     <Compile Include="Controllers\WaterController.cs" />
     <Compile Include="Infrastructure\SmsSender.cs" />
     <Compile Include="Models\Account.cs" />
@@ -127,6 +128,7 @@
     <Compile Include="Models\VoterModels.cs" />
     <Compile Include="Models\WaterModels.cs" />
     <Compile Include="Models\WaterDashboardModels.cs" />
+    <Compile Include="Models\WcwcDisabilityModels.cs" />
     <Compile Include="Repositories\IParkBookingRepository.cs" />
     <Compile Include="Repositories\IVoterRepository.cs" />
     <Compile Include="Repositories\OracleConnectionFactory.cs" />
@@ -135,6 +137,7 @@
     <Compile Include="Repositories\VoterRepository.cs" />
     <Compile Include="Repositories\WaterRepository.cs" />
     <Compile Include="Repositories\WaterDashboardRepository.cs" />
+    <Compile Include="Repositories\WcwcDisabilityRepository.cs" />
     <Compile Include="Security\ShaAuthenticationAttribute.cs" />
     <Compile Include="Security\ApiKeyAuthenticationHandler.cs" />
     <Compile Include="Security\SecurityHelper.cs" />
@@ -148,6 +151,8 @@
     <Compile Include="Services\ParkBookingService.cs" />
     <Compile Include="Services\SmsService.cs" />
     <Compile Include="Services\TransactionService.cs" />
+    <Compile Include="Services\WcwcDisabilityService.cs" />
+    <Compile Include="Services\WcwcDocumentStorageService.cs" />
     <Compile Include="Services\ICustomerService.cs" />
     <Compile Include="Services\CustomerService.cs" />
     <Compile Include="Repositories\IAccountRepository.cs" />

@@ -45,7 +45,8 @@ namespace SmkcApi.Security
             "/api/deposits/consent/googledrive/health",      // Google Drive consent endpoints (plain access)
             "/api/deposits/consent/googledrive/upload",
             "/api/deposits/consent/googledrive/download",
-            "/api/deposits/consent/googledrive/info"
+            "/api/deposits/consent/googledrive/info",
+            "/api/women-child-welfare"
         };
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -180,7 +181,9 @@ namespace SmkcApi.Security
                 return false;
 
             // Check if path matches any public endpoint
-            return PublicEndpoints.Any(endpoint => path.Equals(endpoint, StringComparison.OrdinalIgnoreCase));
+            return PublicEndpoints.Any(endpoint =>
+                path.Equals(endpoint, StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith(endpoint + "/", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>

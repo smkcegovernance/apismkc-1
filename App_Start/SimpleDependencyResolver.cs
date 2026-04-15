@@ -31,6 +31,7 @@ namespace SmkcApi.App_Start
             RegisterAuth();
             RegisterBoothMapping(); // New registration for booth mapping
             RegisterVotingStatistics(); // New registration for voting statistics
+            RegisterWcwcDisability();
         }
 
         /// <summary>
@@ -239,6 +240,21 @@ namespace SmkcApi.App_Start
             // Voting Statistics Controller
             _factories[typeof(VotingStatisticsController)] = () => new VotingStatisticsController(
                 GetService(typeof(IVotingStatisticsRepository)) as IVotingStatisticsRepository
+            );
+        }
+
+        private void RegisterWcwcDisability()
+        {
+            var wcwcConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbWcwc");
+
+            _factories[typeof(IWcwcDisabilityRepository)] = () => new WcwcDisabilityRepository(wcwcConnFactory);
+            _factories[typeof(IWcwcDocumentStorageService)] = () => new WcwcDocumentStorageService();
+            _factories[typeof(IWcwcDisabilityService)] = () => new WcwcDisabilityService(
+                GetService(typeof(IWcwcDisabilityRepository)) as IWcwcDisabilityRepository,
+                GetService(typeof(IWcwcDocumentStorageService)) as IWcwcDocumentStorageService
+            );
+            _factories[typeof(WomenChildWelfareController)] = () => new WomenChildWelfareController(
+                GetService(typeof(IWcwcDisabilityService)) as IWcwcDisabilityService
             );
         }
 
