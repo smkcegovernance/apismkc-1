@@ -105,6 +105,7 @@
     <Compile Include="App_Start\SimpleDependencyResolver.cs" />
     <Compile Include="Controllers\AccountController.cs" />
     <Compile Include="Controllers\AuthController.cs" />
+    <Compile Include="Controllers\ErpAuthController.cs" />
     <Compile Include="Controllers\BookingsController.cs" />
     <Compile Include="Controllers\CitizenController.cs" />
     <Compile Include="Controllers\DepartmentController.cs" />
@@ -113,6 +114,7 @@
     <Compile Include="Controllers\UtilitiesController.cs" />
     <Compile Include="Controllers\VotersController.cs" />
     <Compile Include="Controllers\WomenChildWelfareController.cs" />
+    <Compile Include="Controllers\DisabilityOtpController.cs" />
     <Compile Include="Controllers\WaterController.cs" />
     <Compile Include="Infrastructure\SmsSender.cs" />
     <Compile Include="Models\Account.cs" />
@@ -176,11 +178,13 @@
     <Compile Include="Models\DepositManager\UploadConsentDocumentRequest.cs" />
     <Compile Include="Models\VotingStatistics\VotingStatisticsModels.cs" />
     <Compile Include="Repositories\AuthRepository.cs" />
+    <Compile Include="Repositories\ErpAuthRepository.cs" />
     <Compile Include="Repositories\BoothMapping\BoothMappingRepositories.cs" />
     <Compile Include="Repositories\BoothMapping\IBoothMappingRepositories.cs" />
     <Compile Include="Repositories\DepositManager\DepositRepository.cs" />
     <Compile Include="Repositories\VotingStatistics\VotingStatisticsRepository.cs" />
     <Compile Include="Services\AuthService.cs" />
+    <Compile Include="Services\ErpAuthService.cs" />
     <Compile Include="Services\BoothMapping\BoothMappingServices.cs" />
     <Compile Include="Services\BoothMapping\IBoothMappingServices.cs" />
     <Compile Include="Services\DepositManager\FtpLogger.cs" />
@@ -200,6 +204,27 @@
     <Compile Include="Utils\DvbwConverter.cs" />
     <Compile Include="Utils\IsmMarathiConverter.cs" />
     <Compile Include="Utils\LegacyIndicConverter.cs" />
+    <Compile Include="Models\BudgetBook\BudgetBookModels.cs" />
+    <Compile Include="Repositories\BudgetBook\IBudgetBookRepository.cs" />
+    <Compile Include="Repositories\BudgetBook\BudgetBookRepository.cs" />
+    <Compile Include="Controllers\BudgetBook\BudgetBookController.cs" />
+    <Compile Include="Models\GAD\GadWorkProposalModels.cs" />
+    <Compile Include="Models\GAD\GadBudgetCapModels.cs" />
+    <Compile Include="Repositories\GAD\IGadWorkProposalRepository.cs" />
+    <Compile Include="Repositories\GAD\GadWorkProposalRepository.cs" />
+    <Compile Include="Repositories\GAD\IGadBudgetCapRepository.cs" />
+    <Compile Include="Repositories\GAD\GadBudgetCapRepository.cs" />
+    <Compile Include="Repositories\GAD\BudgetBalanceDataAccess.cs" />
+    <Compile Include="Controllers\GAD\GadWorkProposalController.cs" />
+    <Compile Include="Controllers\GAD\GadBudgetCapController.cs" />
+    <Compile Include="Models\UserRights\UserRightsModels.cs" />
+    <Compile Include="Repositories\UserRights\IUserRightsRepository.cs" />
+    <Compile Include="Repositories\UserRights\UserRightsRepository.cs" />
+    <Compile Include="Controllers\UserRightsController.cs" />
+    <Compile Include="Models\Departments\DeptConfigDto.cs" />
+    <Compile Include="Repositories\Departments\IDepartmentsRepository.cs" />
+    <Compile Include="Repositories\Departments\DepartmentsRepository.cs" />
+    <Compile Include="Controllers\DepartmentsController.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="App_Data\" />

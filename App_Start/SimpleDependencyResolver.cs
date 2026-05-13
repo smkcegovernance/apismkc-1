@@ -12,6 +12,12 @@ using SmkcApi.Repositories.BoothMapping; // for Booth Mapping repositories
 using SmkcApi.Services.BoothMapping; // for Booth Mapping services
 using SmkcApi.Controllers.VotingStatistics; // for Voting Statistics controller
 using SmkcApi.Repositories.VotingStatistics; // for Voting Statistics repository
+using SmkcApi.Controllers.BudgetBook; // for Budget Book controller
+using SmkcApi.Repositories.BudgetBook; // for Budget Book repository
+using SmkcApi.Controllers.GAD; // for GAD Work Proposal controller
+using SmkcApi.Repositories.GAD; // for GAD Work Proposal repository
+using SmkcApi.Repositories.UserRights; // for User Rights repository
+using SmkcApi.Repositories.Departments; // for Departments repository
 
 namespace SmkcApi.App_Start
 {
@@ -29,9 +35,15 @@ namespace SmkcApi.App_Start
             RegisterDepositManager();
             RegisterDuplicateVoters();
             RegisterAuth();
+            RegisterErpAuth();
             RegisterBoothMapping(); // New registration for booth mapping
             RegisterVotingStatistics(); // New registration for voting statistics
             RegisterWcwcDisability();
+            RegisterBudgetBook();
+            RegisterGadWorkProposals();
+            RegisterGadBudgetCap();
+            RegisterUserRights();
+            RegisterDepartments();
         }
 
         /// <summary>
@@ -174,6 +186,24 @@ namespace SmkcApi.App_Start
         }
 
         /// <summary>
+        /// Register ERP-specific authentication dependencies.
+        /// Uses ULBERP schema with USER_VIFLAG, USER_LOCK, USER_FROM/TO, BASE64 passwords.
+        /// Distinct from deposit-manager auth (RegisterAuth).
+        /// </summary>
+        private void RegisterErpAuth()
+        {
+            var erpConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbUlberp");
+
+            _factories[typeof(IErpAuthRepository)] = () => new ErpAuthRepository(erpConnFactory);
+            _factories[typeof(IErpAuthService)] = () => new ErpAuthService(
+                GetService(typeof(IErpAuthRepository)) as IErpAuthRepository
+            );
+            _factories[typeof(ErpAuthController)] = () => new ErpAuthController(
+                GetService(typeof(IErpAuthService)) as IErpAuthService
+            );
+        }
+
+        /// <summary>
         /// Register authentication dependencies (AuthController, AuthService, AuthRepository)
         /// Auth uses ULBERP connection string for user authentication
         /// </summary>
@@ -255,6 +285,72 @@ namespace SmkcApi.App_Start
             );
             _factories[typeof(WomenChildWelfareController)] = () => new WomenChildWelfareController(
                 GetService(typeof(IWcwcDisabilityService)) as IWcwcDisabilityService
+            );
+
+            // Disability OTP controller — uses the already-registered ISmsSender
+            _factories[typeof(DisabilityOtpController)] = () => new DisabilityOtpController(
+                GetService(typeof(SmkcApi.Infrastructure.ISmsSender)) as SmkcApi.Infrastructure.ISmsSender
+            );
+        }
+
+        /// <summary>
+        /// Register Budget Book (Primary/Final Budget Entry) dependencies.
+        /// Uses ABAS schema — can cross-access ULBERP and GAD tables via grants.
+        /// </summary>
+        private void RegisterBudgetBook()
+        {
+            var abasConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+
+            _factories[typeof(IBudgetBookRepository)] = () => new BudgetBookRepository(abasConnFactory);
+            _factories[typeof(BudgetBookController)] = () => new BudgetBookController(
+                GetService(typeof(IBudgetBookRepository)) as IBudgetBookRepository
+            );
+        }
+
+        /// <summary>
+        /// Register GAD Work Proposal (Under/Over ₹10 lakh) dependencies.
+        /// Uses ABAS schema — has cross-schema grants to GAD and ULBERP.
+        /// </summary>
+        private void RegisterGadWorkProposals()
+        {
+            var abasConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+
+            _factories[typeof(IGadWorkProposalRepository)] = () => new GadWorkProposalRepository(abasConnFactory);
+            _factories[typeof(GadWorkProposalController)] = () => new GadWorkProposalController(
+                GetService(typeof(IGadWorkProposalRepository)) as IGadWorkProposalRepository
+            );
+        }
+
+        private void RegisterGadBudgetCap()
+        {
+            var abasConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+            _factories[typeof(IGadBudgetCapRepository)] = () => new GadBudgetCapRepository(abasConnFactory);
+            _factories[typeof(GadBudgetCapController)] = () => new GadBudgetCapController(
+                GetService(typeof(IGadBudgetCapRepository)) as IGadBudgetCapRepository
+            );
+        }
+
+        /// <summary>
+        /// Register User Rights management dependencies.
+        /// Uses ULBERP schema — reads/writes ERP_USER_RIGHTS table.
+        /// </summary>
+        private void RegisterUserRights()
+        {
+            var ulbConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbUlberp");
+
+            _factories[typeof(IUserRightsRepository)] = () => new UserRightsRepository(ulbConnFactory);
+            _factories[typeof(UserRightsController)] = () => new UserRightsController(
+                GetService(typeof(IUserRightsRepository)) as IUserRightsRepository
+            );
+        }
+
+        private void RegisterDepartments()
+        {
+            var ulbConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbUlberp");
+
+            _factories[typeof(IDepartmentsRepository)] = () => new DepartmentsRepository(ulbConnFactory);
+            _factories[typeof(DepartmentsController)] = () => new DepartmentsController(
+                GetService(typeof(IDepartmentsRepository)) as IDepartmentsRepository
             );
         }
 

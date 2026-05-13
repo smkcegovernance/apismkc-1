@@ -34,6 +34,11 @@ namespace SmkcApi.Security
             "/api/auth/bank/login",
             "/api/auth/account/login",
             "/api/auth/commissioner/login",
+            "/api/erp-auth/login",          // ERP login endpoint
+            "/api/erp-auth/profile",        // ERP profile endpoint
+            "/api/erp-auth/change-password", // ERP change password endpoint
+            "/api/erp-auth/locked-users",   // ERP admin: list locked accounts
+            "/api/erp-auth/unlock-user",    // ERP admin: unlock a user account
             "/api/booth/login",             // Booth Mapping login endpoint
             "/api/ftp-diagnostic/network-info",  // FTP diagnostic endpoints
             "/api/ftp-diagnostic/config",
@@ -46,7 +51,12 @@ namespace SmkcApi.Security
             "/api/deposits/consent/googledrive/upload",
             "/api/deposits/consent/googledrive/download",
             "/api/deposits/consent/googledrive/info",
-            "/api/women-child-welfare"
+            "/api/women-child-welfare",
+            "/api/disability",          // Public OTP endpoints for disability registration form
+            "/api/accounts/budget-book", // Budget book entry — internal ERP use, no API key needed
+            "/api/gad/work-proposals",  // GAD work proposals — internal ERP use, no API key needed
+            "/api/gad/budget-cap",      // GAD budget cap management — accounts dept only
+            "/api/user-rights"          // ERP user rights management — internal admin use, no API key needed
         };
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

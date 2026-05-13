@@ -104,6 +104,15 @@ namespace SmkcApi.Controllers
             return CreateResponse(result);
         }
 
+        [HttpPatch]
+        [Route("register/{identifier}/status")]
+        [AllowAnonymous]
+        public IHttpActionResult UpdateStatus(string identifier, [FromBody] WcwcStatusUpdateRequest request)
+        {
+            var result = _service.UpdateStatus(identifier, request);
+            return CreateResponse(result);
+        }
+
         [HttpPost]
         [Route("operator/login")]
         [AllowAnonymous]

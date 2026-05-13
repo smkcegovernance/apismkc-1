@@ -14,6 +14,7 @@ namespace SmkcApi.Services
         WcwcApiResponse Update(string identifier, WcwcRegistrationUpsertRequest request);
         WcwcApiResponse GetRegistration(string identifier);
         WcwcApiResponse Search(string searchText, string status, string applicationMode, int? operatorUserId);
+        WcwcApiResponse UpdateStatus(string identifier, WcwcStatusUpdateRequest request);
         WcwcApiResponse Cancel(string identifier, WcwcStatusUpdateRequest request);
         WcwcApiResponse OperatorLogin(WcwcOperatorLoginRequest request);
         WcwcApiResponse UploadDocument(WcwcDocumentUploadRequest request);
@@ -123,6 +124,30 @@ namespace SmkcApi.Services
             }
 
             return WcwcApiResponse.CreateSuccess(result.Data, result.Message, null);
+        }
+
+        public WcwcApiResponse UpdateStatus(string identifier, WcwcStatusUpdateRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Status))
+                return WcwcApiResponse.CreateError("नवीन स्थिती आवश्यक आहे", "MISSING_STATUS");
+
+            var newStatus = request.Status.Trim().ToUpperInvariant();
+            var allowedStatuses = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal)
+                { "UNDER_REVIEW", "APPROVED", "REJECTED" };
+            if (!allowedStatuses.Contains(newStatus))
+                return WcwcApiResponse.CreateError("स्थिती UNDER_REVIEW, APPROVED किंवा REJECTED असणे आवश्यक आहे", "INVALID_STATUS");
+
+            if (newStatus == "REJECTED" && string.IsNullOrWhiteSpace(request.Remarks))
+                return WcwcApiResponse.CreateError("नाकारताना कारण/शेरा आवश्यक आहे", "REMARKS_REQUIRED");
+
+            var resolved = ResolveIdentifier(identifier);
+            if (!resolved.Success) return WcwcApiResponse.CreateError(resolved.Message, resolved.ErrorCode);
+            var row = GetFirstRow(resolved.Data);
+            if (row == null) return WcwcApiResponse.CreateError("नोंदणी आढळली नाही", "REGISTRATION_NOT_FOUND");
+
+            var result = _repository.UpdateStatus(Convert.ToInt32(row["REGISTRATION_ID"]), newStatus, request.OperatorUserId, request.Remarks);
+            if (!result.Success) return WcwcApiResponse.CreateError(result.Message, result.ErrorCode);
+            return WcwcApiResponse.CreateSuccess(null, result.Message, Convert.ToString(row["REGISTRATION_NO"]));
         }
 
         public WcwcApiResponse Cancel(string identifier, WcwcStatusUpdateRequest request)
