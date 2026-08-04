@@ -19,6 +19,7 @@ namespace SmkcApi.Services.DepositManager
         ApiResponse CreateRequirement(CreateRequirementRequest request);
         ApiResponse PublishRequirement(string requirementId, string authorizedBy);
         ApiResponse DeleteRequirement(string requirementId);
+        ApiResponse InvalidateRequirement(string requirementId, string invalidatedBy, string invalidationReason);
         ApiResponse GetBanks(string status);
         ApiResponse CreateBank(CreateBankRequest request);
         ApiResponse GetQuotes(string requirementId);

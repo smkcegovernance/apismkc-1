@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Web.Http;
+using Newtonsoft.Json.Linq;
 using SmkcApi.Infrastructure;
 using SmkcApi.Security;
 
@@ -60,18 +61,36 @@ namespace SmkcApi.Controllers
                 Attempts = 0
             };
 
+            const string templateServiceName = "Disability Registration";
             var message = string.Format(
-                "Dear User, Your One Time Password for SMKC Municipal Corporation Disability Registration is {0}. Please Do Not Share this with Anybody.",
+                "Dear User, Your One Time Password for SMKC Municipal Corporation {0} is {1}. Please Do Not Share this with Anybody.",
+                templateServiceName,
                 otp);
 
             try
             {
-                await _smsSender.SendSmsRawAsync(
+                var providerResponse = await _smsSender.SendOtpSmsRawAsync(
                     new[] { mobile },
                     message,
                     unicode: false,
-                    dlttemplateid: ConfigurationManager.AppSettings["Sms_DisabilityOtpTemplateId"]);
-                return Ok(new { success = true, message = "OTP यशस्वीरित्या पाठवला गेला" });
+                    channel: ConfigurationManager.AppSettings["Sms_OtpChannel"],
+                    dcs: ConfigurationManager.AppSettings["Sms_OtpDcs"],
+                    route: ConfigurationManager.AppSettings["Sms_OtpRoute"],
+                    dltTemplateId: ConfigurationManager.AppSettings["Sms_DisabilityOtpTemplateId"],
+                    peid: ConfigurationManager.AppSettings["Sms_DefaultPeId"]);
+
+                if (!IsOtpSendSuccessful(providerResponse))
+                {
+                    return Content(HttpStatusCode.BadGateway,
+                        new
+                        {
+                            success = false,
+                            message = "OTP पाठवताना SMS gateway कडून त्रुटी आली",
+                            providerResponse
+                        });
+                }
+
+                return Ok(new { success = true, message = "OTP यशस्वीरित्या पाठवला गेला", providerResponse });
             }
             catch (Exception ex)
             {
@@ -79,6 +98,30 @@ namespace SmkcApi.Controllers
                     "DisabilityOtpController.SendOtp error: " + ex);
                 return Content(HttpStatusCode.InternalServerError,
                     new { success = false, message = "OTP पाठवताना त्रुटी आली" });
+            }
+        }
+
+        /// <summary>
+        /// Check delivery status for an OTP job id.
+        /// GET /api/disability/otp-delivery/{jobId}
+        /// </summary>
+        [HttpGet]
+        [Route("otp-delivery/{jobId}")]
+        public async Task<IHttpActionResult> GetOtpDeliveryStatus(string jobId)
+        {
+            if (string.IsNullOrWhiteSpace(jobId))
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "jobId आवश्यक आहे" });
+
+            try
+            {
+                var providerResponse = await _smsSender.GetOtpDeliveryStatusRawAsync(jobId);
+                return Ok(new { success = true, jobId, providerResponse });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.TraceError("DisabilityOtpController.GetOtpDeliveryStatus error: " + ex);
+                return Content(HttpStatusCode.InternalServerError,
+                    new { success = false, message = "डिलिव्हरी स्टेटस तपासताना त्रुटी आली" });
             }
         }
 
@@ -161,6 +204,27 @@ namespace SmkcApi.Controllers
                 rng.GetBytes(bytes);
                 var value = BitConverter.ToUInt32(bytes, 0) % 900000 + 100000;
                 return value.ToString();
+            }
+        }
+
+        private static bool IsOtpSendSuccessful(string providerResponse)
+        {
+            if (string.IsNullOrWhiteSpace(providerResponse)) return false;
+
+            try
+            {
+                var payload = JObject.Parse(providerResponse);
+                var errorCode = payload.Value<string>("ErrorCode");
+                if (!string.IsNullOrWhiteSpace(errorCode))
+                {
+                    return string.Equals(errorCode, "000", StringComparison.OrdinalIgnoreCase);
+                }
+
+                return payload["Error"] == null;
+            }
+            catch
+            {
+                return false;
             }
         }
 

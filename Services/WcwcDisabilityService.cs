@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using SmkcApi.Infrastructure;
 using SmkcApi.Models;
 using SmkcApi.Models.DepositManager;
 using SmkcApi.Repositories;
@@ -13,18 +16,22 @@ namespace SmkcApi.Services
         WcwcApiResponse Register(WcwcRegistrationUpsertRequest request);
         WcwcApiResponse Update(string identifier, WcwcRegistrationUpsertRequest request);
         WcwcApiResponse GetRegistration(string identifier);
+        WcwcApiResponse GetApplicationStatus(string registrationNumber);
         WcwcApiResponse Search(string searchText, string status, string applicationMode, int? operatorUserId);
         WcwcApiResponse UpdateStatus(string identifier, WcwcStatusUpdateRequest request);
+        Task<WcwcApiResponse> SendStatusSmsAsync(string identifier, WcwcStatusSmsRequest request);
         WcwcApiResponse Cancel(string identifier, WcwcStatusUpdateRequest request);
         WcwcApiResponse OperatorLogin(WcwcOperatorLoginRequest request);
         WcwcApiResponse UploadDocument(WcwcDocumentUploadRequest request);
         WcwcApiResponse DownloadDocument(string registrationNumber, string documentCode, string fileName);
+        WcwcApiResponse GetReport(string reportType, DateTime? fromDate, DateTime? toDate, string applicationMode);
     }
 
     public class WcwcDisabilityService : IWcwcDisabilityService
     {
         private readonly IWcwcDisabilityRepository _repository;
         private readonly IWcwcDocumentStorageService _documentStorageService;
+        private readonly ISmsSender _smsSender;
 
         private static readonly IDictionary<string, int> DisabilityTypeMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
@@ -70,16 +77,30 @@ namespace SmkcApi.Services
         {
             { "udidDoc", "UDID_DOC" },
             { "aadhaarDoc", "AADHAAR_DOC" },
+            { "rationCardDoc", "RATION_CARD_DOC" },
             { "bankDoc", "BANK_DOC" },
+            { "incomeCertificateDoc", "INCOME_CERTIFICATE_DOC" },
             { "photoDoc", "PHOTO_DOC" },
             { "applicantSignature", "APPLICANT_SIGNATURE" },
             { "surveyorSignature", "SURVEYOR_SIGNATURE" }
         };
 
-        public WcwcDisabilityService(IWcwcDisabilityRepository repository, IWcwcDocumentStorageService documentStorageService)
+        private static readonly string[] RequiredDocumentCodes = new[]
+        {
+            "UDID_DOC",
+            "AADHAAR_DOC",
+            "RATION_CARD_DOC",
+            "BANK_DOC",
+            "INCOME_CERTIFICATE_DOC",
+            "PHOTO_DOC",
+            "APPLICANT_SIGNATURE"
+        };
+
+        public WcwcDisabilityService(IWcwcDisabilityRepository repository, IWcwcDocumentStorageService documentStorageService, ISmsSender smsSender)
         {
             _repository = repository;
             _documentStorageService = documentStorageService;
+            _smsSender = smsSender;
         }
 
         public WcwcApiResponse Register(WcwcRegistrationUpsertRequest request)
@@ -115,6 +136,27 @@ namespace SmkcApi.Services
             return WcwcApiResponse.CreateSuccess(resolved.Data, "Registration retrieved successfully", ExtractRegistrationNumber(resolved.Data));
         }
 
+        public WcwcApiResponse GetApplicationStatus(string registrationNumber)
+        {
+            if (string.IsNullOrWhiteSpace(registrationNumber))
+                return WcwcApiResponse.CreateError("Registration number is required", "IDENTIFIER_REQUIRED");
+
+            var result = _repository.GetApplicationStatus(registrationNumber.Trim());
+            if (!result.Success)
+                return WcwcApiResponse.CreateError(result.Message, result.ErrorCode ?? "STATUS_LOOKUP_FAILED");
+
+            return WcwcApiResponse.CreateSuccess(result.Data, result.Message, registrationNumber);
+        }
+
+        public WcwcApiResponse GetReport(string reportType, DateTime? fromDate, DateTime? toDate, string applicationMode)
+        {
+            var result = _repository.GetReport(reportType ?? "ALL", fromDate, toDate, applicationMode);
+            if (!result.Success)
+                return WcwcApiResponse.CreateError(result.Message, result.ErrorCode ?? "REPORT_FAILED");
+
+            return WcwcApiResponse.CreateSuccess(result.Data, result.Message, null);
+        }
+
         public WcwcApiResponse Search(string searchText, string status, string applicationMode, int? operatorUserId)
         {
             var result = _repository.SearchRegistrations(searchText, status, applicationMode, operatorUserId);
@@ -133,12 +175,12 @@ namespace SmkcApi.Services
 
             var newStatus = request.Status.Trim().ToUpperInvariant();
             var allowedStatuses = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal)
-                { "UNDER_REVIEW", "APPROVED", "REJECTED" };
+                { "UNDER_REVIEW", "APPROVED", "REJECTED", "DUPLICATE" };
             if (!allowedStatuses.Contains(newStatus))
-                return WcwcApiResponse.CreateError("स्थिती UNDER_REVIEW, APPROVED किंवा REJECTED असणे आवश्यक आहे", "INVALID_STATUS");
+                return WcwcApiResponse.CreateError("स्थिती UNDER_REVIEW, APPROVED, REJECTED किंवा DUPLICATE असणे आवश्यक आहे", "INVALID_STATUS");
 
-            if (newStatus == "REJECTED" && string.IsNullOrWhiteSpace(request.Remarks))
-                return WcwcApiResponse.CreateError("नाकारताना कारण/शेरा आवश्यक आहे", "REMARKS_REQUIRED");
+            if ((newStatus == "REJECTED" || newStatus == "DUPLICATE") && string.IsNullOrWhiteSpace(request.Remarks))
+                return WcwcApiResponse.CreateError("नाकारताना / डुप्लिकेट करताना कारण/शेरा आवश्यक आहे", "REMARKS_REQUIRED");
 
             var resolved = ResolveIdentifier(identifier);
             if (!resolved.Success) return WcwcApiResponse.CreateError(resolved.Message, resolved.ErrorCode);
@@ -148,6 +190,68 @@ namespace SmkcApi.Services
             var result = _repository.UpdateStatus(Convert.ToInt32(row["REGISTRATION_ID"]), newStatus, request.OperatorUserId, request.Remarks);
             if (!result.Success) return WcwcApiResponse.CreateError(result.Message, result.ErrorCode);
             return WcwcApiResponse.CreateSuccess(null, result.Message, Convert.ToString(row["REGISTRATION_NO"]));
+        }
+
+        public async Task<WcwcApiResponse> SendStatusSmsAsync(string identifier, WcwcStatusSmsRequest request)
+        {
+            var resolved = ResolveIdentifier(identifier);
+            if (!resolved.Success)
+            {
+                return WcwcApiResponse.CreateError(resolved.Message, resolved.ErrorCode);
+            }
+
+            var row = GetFirstRow(resolved.Data);
+            if (row == null)
+            {
+                return WcwcApiResponse.CreateError("नोंदणी आढळली नाही", "REGISTRATION_NOT_FOUND");
+            }
+
+            var mobile = GetValue(row, "MOBILE_NUMBER");
+            if (string.IsNullOrWhiteSpace(mobile))
+            {
+                return WcwcApiResponse.CreateError("मोबाइल क्रमांक उपलब्ध नाही", "MOBILE_NOT_FOUND");
+            }
+
+            var registrationNumber = GetValue(row, "REGISTRATION_NO");
+            if (string.IsNullOrWhiteSpace(registrationNumber))
+            {
+                return WcwcApiResponse.CreateError("नोंदणी क्रमांक उपलब्ध नाही", "REGISTRATION_NOT_FOUND");
+            }
+
+            var currentStatus = !string.IsNullOrWhiteSpace(request != null ? request.Status : null)
+                ? request.Status.Trim().ToUpperInvariant()
+                : GetValue(row, "STATUS");
+
+            if (string.IsNullOrWhiteSpace(currentStatus))
+            {
+                return WcwcApiResponse.CreateError("स्थिती उपलब्ध नाही", "STATUS_NOT_FOUND");
+            }
+
+            var statusLabel = ToMarathiStatusLabel(currentStatus);
+            var baseUrl = ConfigurationManager.AppSettings["Wcwc_PublicStatusPageBaseUrl"];
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                baseUrl = "http://localhost:3000/public/disability-registration/status";
+            }
+
+            var statusUrl = baseUrl.TrimEnd('/') + "?regNo=" + Uri.EscapeDataString(registrationNumber);
+            var message = BuildStatusSmsMessage(registrationNumber, currentStatus, statusLabel, statusUrl);
+
+            var providerResponse = await _smsSender.SendSmsRawAsync(
+                new[] { mobile },
+                message,
+                unicode: true,
+                dlttemplateid: ConfigurationManager.AppSettings["Sms_DefaultDltTemplateId"])
+                .ConfigureAwait(false);
+
+            return WcwcApiResponse.CreateSuccess(new
+            {
+                registrationNumber,
+                mobileNumber = MaskMobile(mobile),
+                status = currentStatus,
+                message,
+                providerResponse
+            }, "स्थिती SMS पाठवला गेला", registrationNumber);
         }
 
         public WcwcApiResponse Cancel(string identifier, WcwcStatusUpdateRequest request)
@@ -256,6 +360,59 @@ namespace SmkcApi.Services
             }
 
             NormalizeRequest(request);
+
+            var duplicateCheck = _repository.FindDuplicateByContactNumbers(request.AadhaarNumber, request.MobileNumber, registrationId);
+            if (!duplicateCheck.Success)
+            {
+                return WcwcApiResponse.CreateError(duplicateCheck.Message, duplicateCheck.ErrorCode ?? "DUPLICATE_CHECK_FAILED");
+            }
+
+            if (duplicateCheck.Data != null)
+            {
+                var duplicateField = (duplicateCheck.Data.DuplicateField ?? string.Empty).ToUpperInvariant();
+                var duplicateRegistrationNo = string.IsNullOrWhiteSpace(duplicateCheck.Data.RegistrationNumber)
+                    ? "(unknown)"
+                    : duplicateCheck.Data.RegistrationNumber;
+
+                if (duplicateField == "AADHAAR_AND_MOBILE")
+                {
+                    return WcwcApiResponse.CreateError(
+                        "हा आधार क्रमांक आणि मोबाईल क्रमांक आधीच नोंदणीकृत आहे (अर्ज क्रमांक: " + duplicateRegistrationNo + ")",
+                        "DUPLICATE_REGISTRATION_NUMBER");
+                }
+
+                if (duplicateField == "AADHAAR")
+                {
+                    return WcwcApiResponse.CreateError(
+                        "हा आधार क्रमांक आधीच नोंदणीकृत आहे (अर्ज क्रमांक: " + duplicateRegistrationNo + ")",
+                        "DUPLICATE_REGISTRATION_NUMBER");
+                }
+
+                return WcwcApiResponse.CreateError(
+                    "हा मोबाईल क्रमांक आधीच नोंदणीकृत आहे (अर्ज क्रमांक: " + duplicateRegistrationNo + ")",
+                    "DUPLICATE_REGISTRATION_NUMBER");
+            }
+
+            var existingDocumentCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (registrationId.HasValue)
+            {
+                var currentRegistration = _repository.GetRegistration(registrationId, null);
+                if (!currentRegistration.Success)
+                {
+                    return WcwcApiResponse.CreateError(currentRegistration.Message, currentRegistration.ErrorCode ?? "REGISTRATION_LOOKUP_FAILED");
+                }
+
+                existingDocumentCodes = GetExistingDocumentCodes(currentRegistration.Data);
+            }
+
+            var missingDocuments = GetMissingRequiredDocuments(request.Files, existingDocumentCodes);
+            if (missingDocuments.Count > 0)
+            {
+                return WcwcApiResponse.CreateError(
+                    "काही आवश्यक कागदपत्रे अपलोड केलेली नाहीत: " + string.Join(", ", missingDocuments),
+                    "MISSING_REQUIRED_DOCUMENTS");
+            }
+
             var saveResult = _repository.SaveRegistration(request, registrationId);
             if (!saveResult.Success)
             {
@@ -328,6 +485,17 @@ namespace SmkcApi.Services
                 return WcwcApiResponse.CreateError("Valid 12 digit Aadhaar number is required", "INVALID_AADHAAR");
             }
 
+            if (string.IsNullOrWhiteSpace(request.RationCardNumber))
+            {
+                return WcwcApiResponse.CreateError("Ration card number is required", "INVALID_RATION_CARD_NUMBER");
+            }
+
+            var rationCardColor = (request.RationCardColor ?? string.Empty).Trim().ToUpperInvariant();
+            if (rationCardColor != "WHITE" && rationCardColor != "YELLOW" && rationCardColor != "ORANGE")
+            {
+                return WcwcApiResponse.CreateError("Ration card color must be WHITE, YELLOW, or ORANGE", "INVALID_RATION_CARD_COLOR");
+            }
+
             if (string.IsNullOrWhiteSpace(request.MobileNumber) || request.MobileNumber.Trim().Length != 10)
             {
                 return WcwcApiResponse.CreateError("Valid 10 digit mobile number is required", "INVALID_MOBILE");
@@ -347,6 +515,11 @@ namespace SmkcApi.Services
             request.SubmissionChannel = string.IsNullOrWhiteSpace(request.SubmissionChannel)
                 ? (request.ApplicationMode == "DEPARTMENT" ? "DEPARTMENT_OPERATOR" : "SELF")
                 : request.SubmissionChannel.Trim().ToUpperInvariant();
+            request.AadhaarNumber = string.IsNullOrWhiteSpace(request.AadhaarNumber) ? request.AadhaarNumber : request.AadhaarNumber.Trim();
+            request.MobileNumber = string.IsNullOrWhiteSpace(request.MobileNumber) ? request.MobileNumber : request.MobileNumber.Trim();
+            request.RationCardColor = string.IsNullOrWhiteSpace(request.RationCardColor)
+                ? request.RationCardColor
+                : request.RationCardColor.Trim().ToUpperInvariant();
 
             request.HasCertificate = NormalizeFlag(request.HasCertificate);
             request.HasUdid = NormalizeFlag(request.HasUdid);
@@ -438,9 +611,143 @@ namespace SmkcApi.Services
                 : "N";
         }
 
+        private static string GetValue(Dictionary<string, object> row, string key)
+        {
+            if (row == null || string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            object value;
+            return row.TryGetValue(key.ToUpperInvariant(), out value) && value != null ? Convert.ToString(value) : null;
+        }
+
+        private static string ToMarathiStatusLabel(string status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return string.Empty;
+            }
+
+            switch (status.Trim().ToUpperInvariant())
+            {
+                case "SUBMITTED": return "नवीन";
+                case "UNDER_REVIEW": return "आढाव्याधीन";
+                case "APPROVED": return "मंजूर";
+                case "REJECTED": return "नाकारले";
+                case "DUPLICATE": return "डुप्लिकेट";
+                case "CANCELLED": return "रद्द";
+                case "DRAFT": return "ड्राफ्ट";
+                default: return status;
+            }
+        }
+
+        private static string BuildStatusSmsMessage(string registrationNumber, string status, string statusLabel, string statusUrl)
+        {
+            var normalizedStatus = string.IsNullOrWhiteSpace(status)
+                ? string.Empty
+                : status.Trim().ToUpperInvariant();
+
+            switch (normalizedStatus)
+            {
+                case "UNDER_REVIEW":
+                    return string.Format("SMKC सूचना: अर्ज क्र. {0} सध्या तपासणी प्रक्रियेत आहे ({1}). स्थिती पाहा: {2}", registrationNumber, statusLabel, statusUrl);
+                case "APPROVED":
+                    return string.Format("SMKC अभिनंदन: अर्ज क्र. {0} मंजूर झाला आहे. पुढील माहिती व स्थिती येथे पहा: {1}", registrationNumber, statusUrl);
+                case "REJECTED":
+                    return string.Format("SMKC सूचना: अर्ज क्र. {0} नाकारला गेला आहे ({1}). कारण/तपशील पाहण्यासाठी लिंक उघडा: {2}", registrationNumber, statusLabel, statusUrl);
+                case "DUPLICATE":
+                    return string.Format("SMKC सूचना: अर्ज क्र. {0} डुप्लिकेट म्हणून नोंदला गेला आहे. तपशील पाहा: {1}", registrationNumber, statusUrl);
+                case "CANCELLED":
+                    return string.Format("SMKC सूचना: अर्ज क्र. {0} रद्द करण्यात आला आहे. तपशील पाहा: {1}", registrationNumber, statusUrl);
+                default:
+                    return string.Format("SMKC सूचना: अर्ज क्र. {0} ची सद्यस्थिती {1} आहे. अधिक माहितीसाठी येथे पहा: {2}", registrationNumber, statusLabel, statusUrl);
+            }
+        }
+
+        private static string MaskMobile(string mobile)
+        {
+            if (string.IsNullOrWhiteSpace(mobile) || mobile.Length < 4)
+            {
+                return mobile;
+            }
+
+            return new string('X', Math.Max(0, mobile.Length - 4)) + mobile.Substring(mobile.Length - 4);
+        }
+
         private static bool ShouldPersistDocument(WcwcUploadedFile file)
         {
             return file != null && file.Bytes != null && file.Bytes.Length > 0 && FieldToDocumentCode.ContainsKey(file.FieldName);
+        }
+
+        private static HashSet<string> GetExistingDocumentCodes(object data)
+        {
+            var codes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var bundle = data as Dictionary<string, object>;
+            if (bundle == null || !bundle.ContainsKey("documents"))
+            {
+                return codes;
+            }
+
+            var rows = bundle["documents"] as List<Dictionary<string, object>>;
+            if (rows == null)
+            {
+                return codes;
+            }
+
+            foreach (var row in rows)
+            {
+                if (row == null || !row.ContainsKey("DOCUMENT_CODE"))
+                {
+                    continue;
+                }
+
+                var code = Convert.ToString(row["DOCUMENT_CODE"]);
+                if (!string.IsNullOrWhiteSpace(code))
+                {
+                    codes.Add(code.Trim());
+                }
+            }
+
+            return codes;
+        }
+
+        private static List<string> GetMissingRequiredDocuments(IEnumerable<WcwcUploadedFile> files, ISet<string> existingDocumentCodes)
+        {
+            var uploadedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in files ?? Enumerable.Empty<WcwcUploadedFile>())
+            {
+                if (file != null && FieldToDocumentCode.ContainsKey(file.FieldName))
+                {
+                    uploadedCodes.Add(FieldToDocumentCode[file.FieldName]);
+                }
+            }
+
+            var missing = new List<string>();
+            foreach (var documentCode in RequiredDocumentCodes)
+            {
+                if (!uploadedCodes.Contains(documentCode) && (existingDocumentCodes == null || !existingDocumentCodes.Contains(documentCode)))
+                {
+                    missing.Add(GetRequiredDocumentLabel(documentCode));
+                }
+            }
+
+            return missing;
+        }
+
+        private static string GetRequiredDocumentLabel(string documentCode)
+        {
+            switch (documentCode)
+            {
+                case "UDID_DOC": return "UDID / दिव्यांग प्रमाणपत्र";
+                case "AADHAAR_DOC": return "आधारकार्ड";
+                case "RATION_CARD_DOC": return "रेशनकार्ड";
+                case "BANK_DOC": return "बँक खाते झेरॉक्स";
+                case "INCOME_CERTIFICATE_DOC": return "उत्पन्न दाखला / वार्षिक आय प्रमाणपत्र";
+                case "PHOTO_DOC": return "फोटो";
+                case "APPLICANT_SIGNATURE": return "अर्जदाराची सही";
+                default: return documentCode;
+            }
         }
 
         private static byte[] DecodeBase64(string fileData)

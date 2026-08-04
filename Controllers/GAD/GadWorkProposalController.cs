@@ -179,6 +179,10 @@ namespace SmkcApi.Controllers.GAD
                 return Content(HttpStatusCode.BadRequest, new { success = false, message = "AcSubhead is required." });
             if (request.ProposalCost <= 100000m)
                 return Content((HttpStatusCode)422, new { success = false, message = "ProposalCost must exceed ₹1,00,000 for a tender proposal." });
+            if (string.IsNullOrWhiteSpace(request.TenderDuration))
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "TenderDuration is required." });
+            if (string.IsNullOrWhiteSpace(request.NewspaperLevel))
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "NewspaperLevel is required." });
             if (string.IsNullOrWhiteSpace(request.EnteredBy))
                 return Content(HttpStatusCode.BadRequest, new { success = false, message = "EnteredBy is required." });
 
@@ -200,12 +204,12 @@ namespace SmkcApi.Controllers.GAD
         [HttpGet]
         [Route("list")]
         [AllowAnonymous]
-        public IHttpActionResult GetList([FromUri] string userId = null, [FromUri] string finYear = null, [FromUri] bool requireAccountRemark = false, [FromUri] string search = null, [FromUri] int pageSize = 20, [FromUri] int pageNo = 1)
+        public IHttpActionResult GetList([FromUri] string userId = null, [FromUri] string finYear = null, [FromUri] bool requireAccountRemark = false, [FromUri] string search = null, [FromUri] int pageSize = 20, [FromUri] int pageNo = 1, [FromUri] string sortCol = null, [FromUri] string sortDir = null)
         {
             try
             {
                 int totalCount;
-                var data = _repo.GetProposals(DEFAULT_ULB_CODE, userId, finYear, requireAccountRemark, search, pageSize, pageNo, out totalCount);
+                var data = _repo.GetProposals(DEFAULT_ULB_CODE, userId, finYear, requireAccountRemark, search, pageSize, pageNo, out totalCount, sortCol, sortDir);
                 int totalPages = pageSize > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 0;
                 return Ok(new { success = true, data, totalCount, totalPages, pageNo, pageSize });
             }

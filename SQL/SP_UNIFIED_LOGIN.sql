@@ -18,14 +18,16 @@ CREATE OR REPLACE PROCEDURE SP_UNIFIED_LOGIN (
 AS
   V_COUNT NUMBER;
   V_USER_ID VARCHAR2(50);
-  V_EMP_NAME VARCHAR2(100);
+  V_USER_NAME VARCHAR2(100);
   V_STATUS VARCHAR2(20);
   V_ROLE VARCHAR2(50);
   V_ROLE_ID NUMBER;
   V_STORED_PASSWORD VARCHAR2(1000);
   V_DECODED_PASSWORD VARCHAR2(1000);
-  V_BANK_ID VARCHAR2(100);
-  V_BANK_NAME VARCHAR2(300);
+  V_VALIDFLAG VARCHAR2(5);
+  V_USER_LOCK VARCHAR2(5);
+  V_USER_FROM DATE;
+  V_USER_TO DATE;
 BEGIN
   -- Validate input parameters
   IF P_USER_ID IS NULL OR P_PASSWORD IS NULL THEN
@@ -39,14 +41,24 @@ BEGIN
   BEGIN
     SELECT 
       USER_ID,
-      EMP_NAME,           -- Using EMP_NAME instead of USER_NAME
+      USER_NAME,
       USER_STATUS,
-      USER_PASSWD
+      USER_PASSWD,
+      DEPT_CODE,
+      USER_VIFLAG,
+      USER_LOCK,
+      USER_FROM,
+      USER_TO
     INTO 
       V_USER_ID,
-      V_EMP_NAME,
+      V_USER_NAME,
       V_STATUS,
-      V_STORED_PASSWORD
+      V_STORED_PASSWORD,
+      V_ROLE_ID,
+      V_VALIDFLAG,
+      V_USER_LOCK,
+      V_USER_FROM,
+      V_USER_TO
     FROM ULBERP.USERDET
     WHERE UPPER(TRIM(USER_ID)) = UPPER(TRIM(P_USER_ID));
 
@@ -88,61 +100,37 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Check user status (A = Active)
-  IF V_STATUS != 'A' THEN
+  -- Check user status (case-insensitive A = Active)
+  IF UPPER(NVL(TRIM(V_STATUS), 'I')) != 'A' THEN
     O_SUCCESS := 0;
     O_MESSAGE := 'User account is inactive';
     OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
     RETURN;
   END IF;
 
-  -- Resolve role from USERROLEDET
-  BEGIN
-    SELECT MAX(DEPT_CODE)
-    INTO V_ROLE_ID
-    FROM ULBERP.USERROLEDET
-    WHERE UPPER(TRIM(USER_ID)) = UPPER(TRIM(P_USER_ID));
-  EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-      O_SUCCESS := 0;
-      O_MESSAGE := 'User role not found';
-      OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
-      RETURN;
-    WHEN OTHERS THEN
-      O_SUCCESS := 0;
-      O_MESSAGE := 'Error fetching user role: ' || SQLERRM;
-      OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
-      RETURN;
-  END;
+  -- Respect lock flag when present
+  IF UPPER(NVL(TRIM(V_USER_LOCK), 'N')) = 'Y' THEN
+    O_SUCCESS := 0;
+    O_MESSAGE := 'User account is locked';
+    OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
+    RETURN;
+  END IF;
 
-  V_BANK_ID := NULL;
-  V_BANK_NAME := NULL;
+  -- Enforce validity date range
+  IF TRUNC(SYSDATE) < NVL(TRUNC(V_USER_FROM), TRUNC(SYSDATE))
+     OR TRUNC(SYSDATE) > NVL(TRUNC(V_USER_TO), TRUNC(SYSDATE)) THEN
+    O_SUCCESS := 0;
+    O_MESSAGE := 'User account is outside valid date range';
+    OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
+    RETURN;
+  END IF;
 
   CASE V_ROLE_ID
     WHEN 1 THEN V_ROLE := 'commissioner';
     WHEN 2 THEN V_ROLE := 'account';
     WHEN 3 THEN V_ROLE := 'bank';
-    ELSE V_ROLE := 'unknown';
+    ELSE V_ROLE := 'operator';
   END CASE;
-
-  -- Fetch bank details only for bank users
-  IF V_ROLE_ID = 3 THEN
-    BEGIN
-      SELECT B.BANK_ID, B.BANK_NAME
-      INTO V_BANK_ID, V_BANK_NAME
-      FROM ABAS.TBL_BANK B
-      WHERE UPPER(TRIM(B.BANK_ID)) = UPPER(TRIM(V_USER_ID));
-    EXCEPTION
-      WHEN NO_DATA_FOUND THEN
-        V_BANK_ID := V_USER_ID;
-        V_BANK_NAME := NULL;
-      WHEN OTHERS THEN
-        O_SUCCESS := 0;
-        O_MESSAGE := 'Error fetching bank details: ' || SQLERRM;
-        OPEN O_USER_DATA FOR SELECT NULL FROM DUAL WHERE 1=0;
-        RETURN;
-    END;
-  END IF;
 
   -- Login successful - return user data with role ID
   O_SUCCESS := 1;
@@ -152,10 +140,10 @@ BEGIN
     SELECT 
       V_USER_ID AS USER_ID,
       V_ROLE AS ROLE,
-      V_EMP_NAME AS NAME,
+      V_USER_NAME AS NAME,
       V_STATUS AS STATUS,
-      V_BANK_ID AS BANK_ID,
-      V_BANK_NAME AS BANK_NAME,
+      CAST(NULL AS VARCHAR2(100)) AS BANK_ID,
+      CAST(NULL AS VARCHAR2(300)) AS BANK_NAME,
       V_ROLE_ID AS ROLE_ID     -- Role ID: 1=Commissioner, 2=Account, 3=Bank
     FROM DUAL;
 

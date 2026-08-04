@@ -61,13 +61,13 @@ namespace SmkcApi.Controllers.BudgetBook
         [HttpGet]
         [Route("remaining")]
         [AllowAnonymous]
-        public IHttpActionResult GetRemaining([FromUri] string acSubhead, [FromUri] string finYear)
+        public IHttpActionResult GetRemaining([FromUri] string acSubhead, [FromUri] string finYear, [FromUri] long? nastiNo = null)
         {
             if (string.IsNullOrWhiteSpace(acSubhead) || string.IsNullOrWhiteSpace(finYear))
                 return Content(HttpStatusCode.BadRequest, new { success = false, message = "acSubhead and finYear are required." });
             try
             {
-                var data = _repo.GetRemainingBudget(DEFAULT_ULB_CODE, acSubhead, finYear);
+                var data = _repo.GetRemainingBudget(DEFAULT_ULB_CODE, acSubhead, finYear, nastiNo);
                 return Ok(new { success = true, data });
             }
             catch (Exception ex)
@@ -181,6 +181,98 @@ namespace SmkcApi.Controllers.BudgetBook
                 var entries = _repo.ListEntries(DEFAULT_ULB_CODE, finYear, deptCode, pageNo, pageSize, out totalCount, search, status);
                 int totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
                 return Ok(new { success = true, data = entries, totalCount, totalPages, pageNo, pageSize });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        // ── GET api/accounts/budget-book/liability-report ─────────────────────
+
+        [HttpGet]
+        [Route("liability-report")]
+        [AllowAnonymous]
+        public IHttpActionResult GetLiabilityReport()
+        {
+            var today = DateTime.Today;
+            var startYear = today.Month >= 4 ? today.Year : today.Year - 1;
+            var fromDate = new DateTime(startYear, 4, 1);
+
+            try
+            {
+                var data = _repo.GetLiabilityReport(DEFAULT_ULB_CODE, fromDate, today);
+                return Ok(new { success = true, data });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        // ── GET api/accounts/budget-book/fund-wise-liability-report ───────────
+
+        [HttpGet]
+        [Route("fund-wise-liability-report")]
+        [AllowAnonymous]
+        public IHttpActionResult GetFundWiseLiabilityReport()
+        {
+            var today = DateTime.Today;
+            var startYear = today.Month >= 4 ? today.Year : today.Year - 1;
+            var fromDate = new DateTime(startYear, 4, 1);
+
+            try
+            {
+                var data = _repo.GetFundWiseLiabilityReport(DEFAULT_ULB_CODE, fromDate, today);
+                return Ok(new { success = true, data });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        // ── GET api/accounts/budget-book/bill-payment-report ──────────────────
+
+        [HttpGet]
+        [Route("bill-payment-report")]
+        [AllowAnonymous]
+        public IHttpActionResult GetBillPaymentReport()
+        {
+            var today = DateTime.Today;
+            var startYear = today.Month >= 4 ? today.Year : today.Year - 1;
+            var fromDate = new DateTime(startYear, 4, 1);
+
+            try
+            {
+                var data = _repo.GetBillPaymentReport(DEFAULT_ULB_CODE, fromDate, today);
+                return Ok(new { success = true, data });
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        // ── GET api/accounts/budget-book/ward-wise-expenditure-report ───────
+
+        [HttpGet]
+        [Route("ward-wise-expenditure-report")]
+        [AllowAnonymous]
+        public IHttpActionResult GetWardWiseExpenditureReport(
+            [FromUri] string finYear = null,
+            [FromUri] string wardNo = null,
+            [FromUri] string wardScope = null,
+            [FromUri] string deptName = null)
+        {
+            var today = DateTime.Today;
+            var startYear = today.Month >= 4 ? today.Year : today.Year - 1;
+            var fromDate = new DateTime(startYear, 4, 1);
+
+            try
+            {
+                var data = _repo.GetWardWiseExpenditureReport(DEFAULT_ULB_CODE, fromDate, today, finYear, wardNo, wardScope, deptName);
+                return Ok(new { success = true, data });
             }
             catch (Exception ex)
             {

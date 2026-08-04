@@ -21,12 +21,28 @@ namespace SmkcApi
 
         protected void Application_BeginRequest()
         {
+            // Redirect root to Swagger UI
+            if (Request.Path == "/" || Request.Path == "")
+            {
+                Response.Redirect("/swagger", endResponse: true);
+                return;
+            }
+
             // Add security headers
             Response.Headers.Add("X-Frame-Options", "DENY");
             Response.Headers.Add("X-Content-Type-Options", "nosniff");
             Response.Headers.Add("X-XSS-Protection", "1; mode=block");
             Response.Headers.Add("Strict-Transport-Security", "max-age=31536000");
-            Response.Headers.Add("Content-Security-Policy", "default-src 'none'");
+            // Content-Security-Policy: relax for Swagger UI paths, strict for everything else
+            if (Request.Path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase))
+            {
+                Response.Headers.Add("Content-Security-Policy",
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:");
+            }
+            else
+            {
+                Response.Headers.Add("Content-Security-Policy", "default-src 'none'");
+            }
             
             // Remove server information
             Response.Headers.Remove("Server");

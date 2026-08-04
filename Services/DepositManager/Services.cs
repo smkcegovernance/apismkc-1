@@ -186,6 +186,7 @@ namespace SmkcApi.Services.DepositManager
         public ApiResponse CreateRequirement(CreateRequirementRequest request) => _repo.Account_CreateRequirement(request);
         public ApiResponse PublishRequirement(string requirementId, string authorizedBy) => _repo.Account_PublishRequirement(requirementId, authorizedBy);
         public ApiResponse DeleteRequirement(string requirementId) => _repo.Account_DeleteRequirement(requirementId);
+        public ApiResponse InvalidateRequirement(string requirementId, string invalidatedBy, string invalidationReason) => _repo.Account_InvalidateRequirement(requirementId, invalidatedBy, invalidationReason);
         public ApiResponse GetBanks(string status) => _repo.Account_GetBanks(status);
         public ApiResponse CreateBank(CreateBankRequest request) => _repo.Account_CreateBank(request);
         public ApiResponse GetQuotes(string requirementId) => _repo.Account_GetQuotes(requirementId);

@@ -18,9 +18,10 @@ namespace SmkcApi.Models.GAD
         public string AcSubhead { get; set; }
         public string FinYear { get; set; }
         public decimal TotalBudget { get; set; }
-        public decimal EffectiveBudget { get; set; }    // After cap applied
-        public decimal ActualExpenditure { get; set; }  // Committed from GAD tables
-        public decimal RemainingBudget { get; set; }    // EffectiveBudget - ActualExpenditure
+        public decimal EffectiveBudget { get; set; }    // After cap + proposal-type rules (used for save validation)
+        public decimal RawCapBudget { get; set; }       // Raw cap from GADBUDGETCAPDET (capAmount / capPct×total / total)
+        public decimal ActualExpenditure { get; set; }  // Committed from GAD tables (quotation + tender + other)
+        public decimal RemainingBudget { get; set; }    // RawCapBudget - ActualExpenditure
         public decimal? CapPercentage { get; set; }     // null if no cap
         public decimal? CapAmount { get; set; }         // null if no cap
     }
@@ -118,7 +119,11 @@ namespace SmkcApi.Models.GAD
     /// Request body for saving a tender (over ₹10 lakh) work proposal.
     /// Maps to GADTENDERORDERSDET.
     /// </summary>
-    public class Over10LProposalRequest : WorkProposalRequestBase { }
+    public class Over10LProposalRequest : WorkProposalRequestBase
+    {
+        public string TenderDuration { get; set; }
+        public string NewspaperLevel { get; set; }
+    }
 
     // ── Response DTOs ─────────────────────────────────────────────────────────────
 
@@ -206,6 +211,8 @@ namespace SmkcApi.Models.GAD
         public string MaintenancePeriod { get; set; }
         public string PrevMaintenance { get; set; }
         public string CompetentOfficer { get; set; }
+        public string TenderDuration { get; set; }
+        public string NewspaperLevel { get; set; }
 
         // Meta
         public string Remarks { get; set; }
@@ -229,6 +236,8 @@ namespace SmkcApi.Models.GAD
         public string EnteredBy { get; set; }
         public DateTime EntryDate { get; set; }
         public string WardNos { get; set; }
+        /// <summary>null = no BB entry; "primary" = primary entry done (STATUS='n'); "final" = final entry done (STATUS='y')</summary>
+        public string BudgetEntryStatus { get; set; }
     }
 
     /// <summary>DTO returned when loading a proposal for audit/account remark entry.</summary>

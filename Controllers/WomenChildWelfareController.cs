@@ -114,6 +114,45 @@ namespace SmkcApi.Controllers
         }
 
         [HttpPost]
+        [Route("register/{identifier}/status/sms")]
+        [AllowAnonymous]
+        public async Task<IHttpActionResult> SendStatusSms(string identifier, [FromBody] WcwcStatusSmsRequest request)
+        {
+            var result = await _service.SendStatusSmsAsync(identifier, request);
+            return CreateResponse(result);
+        }
+
+        [HttpGet]
+        [Route("application-status/{registrationNumber}")]
+        [AllowAnonymous]
+        public IHttpActionResult GetApplicationStatus(string registrationNumber)
+        {
+            var result = _service.GetApplicationStatus(registrationNumber);
+            return CreateResponse(result);
+        }
+
+        [HttpGet]
+        [Route("report")]
+        [AllowAnonymous]
+        public IHttpActionResult GetReport(
+            [FromUri] string reportType = "ALL",
+            [FromUri] string fromDate = null,
+            [FromUri] string toDate = null,
+            [FromUri] string applicationMode = null)
+        {
+            DateTime? from = null;
+            DateTime? to = null;
+            DateTime parsed;
+            if (!string.IsNullOrWhiteSpace(fromDate) && DateTime.TryParse(fromDate, out parsed))
+                from = parsed;
+            if (!string.IsNullOrWhiteSpace(toDate) && DateTime.TryParse(toDate, out parsed))
+                to = parsed;
+
+            var result = _service.GetReport(reportType, from, to, applicationMode);
+            return CreateResponse(result);
+        }
+
+        [HttpPost]
         [Route("operator/login")]
         [AllowAnonymous]
         public IHttpActionResult OperatorLogin([FromBody] WcwcOperatorLoginRequest request)
@@ -168,6 +207,10 @@ namespace SmkcApi.Controllers
 
             var statusCode = response.ErrorCode == "REGISTRATION_NOT_FOUND" || response.ErrorCode == "DOCUMENT_NOT_FOUND"
                 ? HttpStatusCode.NotFound
+                : response.ErrorCode == "DUPLICATE_REGISTRATION_NUMBER"
+                    ? HttpStatusCode.Conflict
+                : response.ErrorCode == "MOBILE_NOT_FOUND" || response.ErrorCode == "STATUS_NOT_FOUND"
+                    ? HttpStatusCode.BadRequest
                 : HttpStatusCode.BadRequest;
 
             return Content(statusCode, response);
@@ -302,12 +345,15 @@ namespace SmkcApi.Controllers
                 case "motherName": request.MotherName = value; break;
                 case "education": request.Education = value; break;
                 case "aadhaarNumber": request.AadhaarNumber = value; break;
+                case "rationCardNumber": request.RationCardNumber = value; break;
+                case "rationCardColor": request.RationCardColor = value; break;
                 case "dob": request.Dob = value; break;
                 case "maritalStatus": request.MaritalStatus = value; break;
                 case "religion": request.Religion = value; break;
                 case "caste": request.Caste = value; break;
                 case "familyRelation": request.FamilyRelation = value; break;
                 case "fullAddress": request.FullAddress = value; break;
+                case "livesInCorporationArea": request.LivesInCorporationArea = value; break;
                 case "wardNumber": request.WardNumber = value; break;
                 case "prabhagSamiti": request.PrabhagSamiti = value; break;
                 case "uphc": request.Uphc = value; break;

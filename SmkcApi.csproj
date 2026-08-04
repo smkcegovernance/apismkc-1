@@ -30,6 +30,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <DocumentationFile>bin\SmkcApi.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -38,6 +39,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <DocumentationFile>bin\SmkcApi.xml</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
@@ -94,6 +96,12 @@
     <Reference Include="NetISMConverter">
       <HintPath>Utils\NetISMConverter.dll</HintPath>
     </Reference>
+    <Reference Include="Swashbuckle.Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cd1bb07a5ac7c7bc">
+      <HintPath>packages\Swashbuckle.Core.5.6.0\lib\net40\Swashbuckle.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="WebActivatorEx, Version=2.0.0.0, Culture=neutral, PublicKeyToken=7b26dc2a43f6a0d4">
+      <HintPath>packages\WebActivatorEx.2.0\lib\net40\WebActivatorEx.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Content Include="Global.asax" />
@@ -103,6 +111,7 @@
   <ItemGroup>
     <Compile Include="App_Start\WebApiConfig.cs" />
     <Compile Include="App_Start\SimpleDependencyResolver.cs" />
+    <Compile Include="App_Start\SwaggerConfig.cs" />
     <Compile Include="Controllers\AccountController.cs" />
     <Compile Include="Controllers\AuthController.cs" />
     <Compile Include="Controllers\ErpAuthController.cs" />
@@ -131,6 +140,7 @@
     <Compile Include="Models\WaterModels.cs" />
     <Compile Include="Models\WaterDashboardModels.cs" />
     <Compile Include="Models\WcwcDisabilityModels.cs" />
+    <Compile Include="Models\SWRModels.cs" />
     <Compile Include="Repositories\IParkBookingRepository.cs" />
     <Compile Include="Repositories\IVoterRepository.cs" />
     <Compile Include="Repositories\OracleConnectionFactory.cs" />
@@ -140,6 +150,7 @@
     <Compile Include="Repositories\WaterRepository.cs" />
     <Compile Include="Repositories\WaterDashboardRepository.cs" />
     <Compile Include="Repositories\WcwcDisabilityRepository.cs" />
+    <Compile Include="Repositories\SWRRepository.cs" />
     <Compile Include="Security\ShaAuthenticationAttribute.cs" />
     <Compile Include="Security\ApiKeyAuthenticationHandler.cs" />
     <Compile Include="Security\SecurityHelper.cs" />
@@ -154,6 +165,7 @@
     <Compile Include="Services\SmsService.cs" />
     <Compile Include="Services\TransactionService.cs" />
     <Compile Include="Services\WcwcDisabilityService.cs" />
+    <Compile Include="Services\SWRService.cs" />
     <Compile Include="Services\WcwcDocumentStorageService.cs" />
     <Compile Include="Services\ICustomerService.cs" />
     <Compile Include="Services\CustomerService.cs" />
@@ -225,6 +237,15 @@
     <Compile Include="Repositories\Departments\IDepartmentsRepository.cs" />
     <Compile Include="Repositories\Departments\DepartmentsRepository.cs" />
     <Compile Include="Controllers\DepartmentsController.cs" />
+    <Compile Include="Models\GAD\GadSamajModels.cs" />
+    <Compile Include="Repositories\GAD\IGadSamajRepository.cs" />
+    <Compile Include="Repositories\GAD\GadSamajRepository.cs" />
+    <Compile Include="Controllers\GAD\GadSamajController.cs" />
+    <Compile Include="Models\GAD\GadWorkOrderModels.cs" />
+    <Compile Include="Repositories\GAD\IGadWorkOrderRepository.cs" />
+    <Compile Include="Repositories\GAD\GadWorkOrderRepository.cs" />
+    <Compile Include="Controllers\GAD\GadWorkOrderController.cs" />
+    <Compile Include="Controllers\WomenChildWelfare\SingleWomenRegistrationController.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="App_Data\" />

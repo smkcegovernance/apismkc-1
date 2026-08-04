@@ -48,6 +48,14 @@ namespace SmkcApi.Models
         public string ErrorCode { get; set; }
     }
 
+    public class WcwcDuplicateRegistrationInfo
+    {
+        public int RegistrationId { get; set; }
+        public string RegistrationNumber { get; set; }
+        public string Status { get; set; }
+        public string DuplicateField { get; set; }
+    }
+
     public class WcwcRegistrationUpsertRequest
     {
         public string RegistrationIdentifier { get; set; }
@@ -59,12 +67,15 @@ namespace SmkcApi.Models
         public string MotherName { get; set; }
         public string Education { get; set; }
         public string AadhaarNumber { get; set; }
+        public string RationCardNumber { get; set; }
+        public string RationCardColor { get; set; }
         public string Dob { get; set; }
         public string MaritalStatus { get; set; }
         public string Religion { get; set; }
         public string Caste { get; set; }
         public string FamilyRelation { get; set; }
         public string FullAddress { get; set; }
+        public string LivesInCorporationArea { get; set; }
         public string WardNumber { get; set; }
         public string PrabhagSamiti { get; set; }
         public string Uphc { get; set; }
@@ -157,6 +168,11 @@ namespace SmkcApi.Models
         public string Status { get; set; }
         public int? OperatorUserId { get; set; }
         public string Remarks { get; set; }
+    }
+
+    public class WcwcStatusSmsRequest
+    {
+        public string Status { get; set; }
     }
 
     public class WcwcDocumentUploadRequest

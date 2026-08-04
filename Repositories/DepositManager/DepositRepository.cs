@@ -20,6 +20,7 @@ namespace SmkcApi.Repositories.DepositManager
         ApiResponse Account_CreateRequirement(CreateRequirementRequest request);
         ApiResponse Account_PublishRequirement(string requirementId, string authorizedBy);
         ApiResponse Account_DeleteRequirement(string requirementId);
+        ApiResponse Account_InvalidateRequirement(string requirementId, string invalidatedBy, string invalidationReason);
         ApiResponse Account_GetBanks(string status);
         ApiResponse Account_CreateBank(CreateBankRequest request);
         ApiResponse Account_GetQuotes(string requirementId);
@@ -108,7 +109,7 @@ namespace SmkcApi.Repositories.DepositManager
             => ExecuteAbas("SP_ACCOUNT_CREATE_REQUIREMENT", cmd =>
             {
                 cmd.CommandType = CommandType.StoredProcedure;
-                cmd.Parameters.Add("p_scheme_name", OracleDbType.Varchar2).Value = request.SchemeName;
+                cmd.Parameters.Add("p_scheme_name", OracleDbType.NVarchar2).Value = request.SchemeName;
                 cmd.Parameters.Add("p_deposit_type", OracleDbType.Varchar2).Value = request.DepositType;
                 cmd.Parameters.Add("p_amount", OracleDbType.Decimal).Value = request.Amount;
                 cmd.Parameters.Add("p_deposit_period", OracleDbType.Int32).Value = request.DepositPeriod;
@@ -293,6 +294,72 @@ namespace SmkcApi.Repositories.DepositManager
                     Message = "Internal server error",
                     Error = ex.Message
                 };
+            }
+        }
+
+        /// <summary>
+        /// Invalidate requirement using ABAS.PKG_DEPOSIT_REQUIREMENTS.invalidate_requirement
+        /// Allowed only when status is 'published'. Records who invalidated, when, and why.
+        /// </summary>
+        public ApiResponse Account_InvalidateRequirement(string requirementId, string invalidatedBy, string invalidationReason)
+        {
+            if (string.IsNullOrWhiteSpace(requirementId))
+                return new ApiResponse { Success = false, Message = "Requirement ID is required" };
+
+            try
+            {
+                using (var conn = _connFactory.CreateAbas())
+                using (var cmd = conn.CreateCommand())
+                {
+                    conn.Open();
+                    cmd.CommandText = "ABAS.PKG_DEPOSIT_REQUIREMENTS.invalidate_requirement";
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("p_requirement_id",      OracleDbType.Varchar2, requirementId,      ParameterDirection.Input);
+                    cmd.Parameters.Add("p_invalidated_by",      OracleDbType.Varchar2, invalidatedBy,      ParameterDirection.Input);
+                    cmd.Parameters.Add("p_invalidation_reason", OracleDbType.Varchar2, invalidationReason, ParameterDirection.Input);
+                    cmd.Parameters.Add("o_success", OracleDbType.Int32).Direction             = ParameterDirection.Output;
+                    cmd.Parameters.Add("o_message", OracleDbType.Varchar2, 4000).Direction    = ParameterDirection.Output;
+
+                    cmd.ExecuteNonQuery();
+
+                    var oSuccessVal = cmd.Parameters["o_success"].Value;
+                    int successCode = oSuccessVal is Oracle.ManagedDataAccess.Types.OracleDecimal od
+                        ? od.ToInt32()
+                        : Convert.ToInt32(oSuccessVal);
+
+                    var success = successCode == 1;
+                    var message = Convert.ToString(cmd.Parameters["o_message"].Value);
+
+                    if (!success)
+                    {
+                        var lower = (message ?? string.Empty).ToLowerInvariant();
+
+                        if (lower.Contains("not found"))
+                            return new ApiResponse { Success = false, Message = "Requirement not found", Error = message };
+
+                        if (lower.Contains("allowed only for published") || lower.Contains("current status"))
+                            return new ApiResponse { Success = false, Message = message, Error = "INVALID_STATUS" };
+
+                        return new ApiResponse { Success = false, Message = string.IsNullOrWhiteSpace(message) ? "Invalidation failed" : message };
+                    }
+
+                    return new ApiResponse
+                    {
+                        Success = true,
+                        Message = string.IsNullOrWhiteSpace(message) ? "Requirement invalidated successfully" : message
+                    };
+                }
+            }
+            catch (OracleException ex)
+            {
+                System.Diagnostics.Trace.TraceError("Oracle Error in invalidate_requirement: " + ex.Message + "\n" + ex.StackTrace);
+                return new ApiResponse { Success = false, Message = ex.Message, Error = "ORA-" + ex.Number };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.TraceError("Error in invalidate_requirement: " + ex.Message + "\n" + ex.StackTrace);
+                return new ApiResponse { Success = false, Message = "Internal server error", Error = ex.Message };
             }
         }
 

@@ -18,6 +18,7 @@ using SmkcApi.Controllers.GAD; // for GAD Work Proposal controller
 using SmkcApi.Repositories.GAD; // for GAD Work Proposal repository
 using SmkcApi.Repositories.UserRights; // for User Rights repository
 using SmkcApi.Repositories.Departments; // for Departments repository
+using SmkcApi.Controllers.WomenChildWelfare; // for SingleWomenRegistrationController
 
 namespace SmkcApi.App_Start
 {
@@ -39,9 +40,12 @@ namespace SmkcApi.App_Start
             RegisterBoothMapping(); // New registration for booth mapping
             RegisterVotingStatistics(); // New registration for voting statistics
             RegisterWcwcDisability();
+            RegisterSingleWomenEmpowerment();
             RegisterBudgetBook();
             RegisterGadWorkProposals();
             RegisterGadBudgetCap();
+            RegisterGadSamaj();
+            RegisterGadWorkOrder();
             RegisterUserRights();
             RegisterDepartments();
         }
@@ -281,7 +285,8 @@ namespace SmkcApi.App_Start
             _factories[typeof(IWcwcDocumentStorageService)] = () => new WcwcDocumentStorageService();
             _factories[typeof(IWcwcDisabilityService)] = () => new WcwcDisabilityService(
                 GetService(typeof(IWcwcDisabilityRepository)) as IWcwcDisabilityRepository,
-                GetService(typeof(IWcwcDocumentStorageService)) as IWcwcDocumentStorageService
+                GetService(typeof(IWcwcDocumentStorageService)) as IWcwcDocumentStorageService,
+                GetService(typeof(SmkcApi.Infrastructure.ISmsSender)) as SmkcApi.Infrastructure.ISmsSender
             );
             _factories[typeof(WomenChildWelfareController)] = () => new WomenChildWelfareController(
                 GetService(typeof(IWcwcDisabilityService)) as IWcwcDisabilityService
@@ -290,6 +295,20 @@ namespace SmkcApi.App_Start
             // Disability OTP controller — uses the already-registered ISmsSender
             _factories[typeof(DisabilityOtpController)] = () => new DisabilityOtpController(
                 GetService(typeof(SmkcApi.Infrastructure.ISmsSender)) as SmkcApi.Infrastructure.ISmsSender
+            );
+        }
+
+        private void RegisterSingleWomenEmpowerment()
+        {
+            // Reuse the WCWC connection factory (same OracleDbWcwc connection string)
+            var wcwcConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbWcwc");
+
+            _factories[typeof(ISWRRepository)] = () => new SWRRepository(wcwcConnFactory);
+            _factories[typeof(ISWRService)]    = () => new SWRService(
+                GetService(typeof(ISWRRepository)) as ISWRRepository
+            );
+            _factories[typeof(SingleWomenRegistrationController)] = () => new SingleWomenRegistrationController(
+                GetService(typeof(ISWRService)) as ISWRService
             );
         }
 
@@ -327,6 +346,30 @@ namespace SmkcApi.App_Start
             _factories[typeof(IGadBudgetCapRepository)] = () => new GadBudgetCapRepository(abasConnFactory);
             _factories[typeof(GadBudgetCapController)] = () => new GadBudgetCapController(
                 GetService(typeof(IGadBudgetCapRepository)) as IGadBudgetCapRepository
+            );
+        }
+
+        /// <summary>
+        /// Register GAD Samaj (Work Order / समज) generation dependencies.
+        /// Uses ABAS schema — has cross-schema grants to GAD and ULBERP.
+        /// </summary>
+        private void RegisterGadSamaj()
+        {
+            var abasConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+
+            _factories[typeof(IGadSamajRepository)] = () => new GadSamajRepository(abasConnFactory);
+            _factories[typeof(GadSamajController)] = () => new GadSamajController(
+                GetService(typeof(IGadSamajRepository)) as IGadSamajRepository
+            );
+        }
+
+        private void RegisterGadWorkOrder()
+        {
+            var abasConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+
+            _factories[typeof(IGadWorkOrderRepository)] = () => new GadWorkOrderRepository(abasConnFactory);
+            _factories[typeof(GadWorkOrderController)] = () => new GadWorkOrderController(
+                GetService(typeof(IGadWorkOrderRepository)) as IGadWorkOrderRepository
             );
         }
 

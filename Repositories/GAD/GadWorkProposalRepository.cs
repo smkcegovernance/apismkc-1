@@ -125,8 +125,8 @@ namespace SmkcApi.Repositories.GAD
                   AND FIN_YEAR   = :fin_year
                   AND (DEPT_CODE = :dept_code OR DEPT_CODE = 0)";
 
-            // Committed expenditure: sum of PROPOSEDCOST from both quotation and tender proposals
-            // for this budget code and financial year (approved proposals only)
+            // Committed expenditure: sum of PROPOSEDCOST from all quotation (incl. other) and tender proposals
+            // for this budget code and financial year across ALL departments
             const string committedSql = @"
                 SELECT NVL(SUM(amt), 0)
                 FROM (
@@ -135,14 +135,12 @@ namespace SmkcApi.Repositories.GAD
                     WHERE ACHEAD_CODE = :ac_subhead
                       AND FINYEAR     = :fin_year
                       AND VALIDFLAG   = 'y'
-                      AND DEPT_CODE   = :dept_code
                     UNION ALL
                     SELECT NVL(PROPOSEDCOST, 0) AS amt
                     FROM GAD.GADTENDERORDERSDET
                     WHERE ACHEAD_CODE = :ac_subhead
                       AND FINYEAR     = :fin_year
                       AND VALIDFLAG   = 'y'
-                      AND DEPT_CODE   = :dept_code
                 )";
 
             // Cap settings (if any) for this budget code / fin year
@@ -179,7 +177,6 @@ namespace SmkcApi.Repositories.GAD
                     {
                         cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
                         cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
-                        cmd.Parameters.Add("dept_code", OracleDbType.Decimal).Value = deptCode;
                         var val = cmd.ExecuteScalar();
                         if (val != null && val != DBNull.Value)
                             committedAmt = Convert.ToDecimal(val);
@@ -210,17 +207,18 @@ namespace SmkcApi.Repositories.GAD
                 catch { /* cap table may not exist yet */ }
             }
 
-            // Effective budget = cap_amount if set, else cap_percentage of total, else total
-            decimal effectiveBudget = totalBudget;
+            // Raw cap: capAmount if set, else capPct% of total, else total (no proposal-type override)
+            decimal rawCapBudget = totalBudget;
             if (capAmount.HasValue && capAmount.Value > 0)
-                effectiveBudget = capAmount.Value;
+                rawCapBudget = capAmount.Value;
             else if (capPercentage.HasValue && capPercentage.Value > 0)
-                effectiveBudget = Math.Round(totalBudget * capPercentage.Value / 100m, 0);
+                rawCapBudget = Math.Round(totalBudget * capPercentage.Value / 100m, 0);
 
-            // Apply proposal-type cap rules:
+            // Effective budget = raw cap + proposal-type override (used for save validation only)
             // Quotation (Q)  → cap applies only when effectiveBudget ≤ ₹1,00,000
             // Tender    (T)  → cap applies only when effectiveBudget > ₹1,00,000
             // Other          → no cap at all (use full budget)
+            decimal effectiveBudget = rawCapBudget;
             var pt = (proposalType ?? string.Empty).Trim().ToUpperInvariant();
             if (pt == "OTHER")
             {
@@ -243,8 +241,9 @@ namespace SmkcApi.Repositories.GAD
                 FinYear = finYear,
                 TotalBudget = totalBudget,
                 EffectiveBudget = effectiveBudget,
+                RawCapBudget = rawCapBudget,
                 ActualExpenditure = committedAmt,
-                RemainingBudget = effectiveBudget - committedAmt,
+                RemainingBudget = rawCapBudget - committedAmt,
                 CapPercentage = capPercentage,
                 CapAmount = capAmount,
             };
@@ -278,7 +277,7 @@ namespace SmkcApi.Repositories.GAD
                      :dept_code, 0,
                      :proposalname, :workplace, :workplacemap, :wardno,
                      :workneed, :workdonebefore,
-                     :proposalamount, :proposedcost, 0,
+                     :proposalamount, :proposedcost, :available_budget,
                      :techapprove, :techsanctionno, :techsanctiondate, :costfinalized,
                      :placeofcorp, :nocattached, :nocofowner,
                      :anydispute, :anycases, :casedetails,
@@ -290,28 +289,43 @@ namespace SmkcApi.Repositories.GAD
                      'n', 'y', :entby, SYSDATE,
                      :otherremarks, 1, GAD.SEQQUOTTENREFNO.NEXTVAL, :inward_type)";
 
-            try
-            {
-                using (var conn = _connectionFactory.CreateAbas())
-                {
-                    conn.Open();
-                    long orderNo = req.PreGeneratedOrderNo > 0
-                        ? req.PreGeneratedOrderNo
-                        : Convert.ToInt64(new OracleCommand(seqSql, conn).ExecuteScalar());
+            string inwardType = string.IsNullOrWhiteSpace(req.InwardType) ? "quotation" : req.InwardType.Trim();
+            string proposalType = inwardType.Equals("other", StringComparison.OrdinalIgnoreCase) ? "OTHER" : "Q";
 
-                    using (var cmd = new OracleCommand(insertSql, conn))
-                    {
-                        AddCommonParams(cmd, ulbCode, orderNo, req);
-                        cmd.Parameters.Add("inward_type", OracleDbType.Varchar2).Value =
-                            string.IsNullOrWhiteSpace(req.InwardType) ? "quotation" : req.InwardType.Trim();
-                        cmd.ExecuteNonQuery();
-                    }
-                    return new WorkProposalSaveResult { Success = true, OrderNo = orderNo, Message = "Quotation proposal saved successfully." };
-                }
-            }
-            catch (Exception ex)
+            using (var conn = _connectionFactory.CreateAbas())
             {
-                return new WorkProposalSaveResult { Success = false, Message = ex.Message };
+                conn.Open();
+                long orderNo = req.PreGeneratedOrderNo > 0
+                    ? req.PreGeneratedOrderNo
+                    : Convert.ToInt64(new OracleCommand(seqSql, conn).ExecuteScalar());
+
+                using (var tx = conn.BeginTransaction())
+                {
+                    try
+                    {
+                        decimal remainingAfter;
+                        var capError = CheckProposalBudgetCap(conn, tx, ulbCode, req.AcSubhead, req.DeptCode,
+                            req.FinYear, proposalType, req.ProposalCost, out remainingAfter);
+                        if (capError != null) { tx.Rollback(); return capError; }
+
+                        using (var cmd = new OracleCommand(insertSql, conn))
+                        {
+                            cmd.Transaction = tx;
+                            cmd.BindByName = true;
+                            AddCommonParams(cmd, ulbCode, orderNo, req);
+                            cmd.Parameters.Add("available_budget", OracleDbType.Decimal).Value = remainingAfter;
+                            cmd.Parameters.Add("inward_type", OracleDbType.Varchar2).Value = inwardType;
+                            cmd.ExecuteNonQuery();
+                        }
+                        tx.Commit();
+                        return new WorkProposalSaveResult { Success = true, OrderNo = orderNo, Message = "Quotation proposal saved successfully." };
+                    }
+                    catch (Exception ex)
+                    {
+                        tx.Rollback();
+                        return new WorkProposalSaveResult { Success = false, Message = ex.Message };
+                    }
+                }
             }
         }
 
@@ -336,6 +350,7 @@ namespace SmkcApi.Repositories.GAD
                      ACHEAD_CODE, ACHEAD_NAME,
                      BUDGETFORWORK, PRRPOSALFROMOTHERDEPT, WORKSPLITTED,
                      WORKEXAMINPERIOD, PROPOSEDBEFOREEXAMIN, SANCTIONOFFICERS,
+                     TENDERDURATION, NEWSPAPERLEVEL,
                      STATUS, VALIDFLAG, ENTBY, ENTDT,
                      OTHERREMARKS, STAGENO, REF_NO)
                 VALUES
@@ -343,7 +358,7 @@ namespace SmkcApi.Repositories.GAD
                      :dept_code, 0,
                      :proposalname, :workplace, :workplacemap, :wardno,
                      :workneed, :workdonebefore,
-                     :proposalamount, :proposedcost, 0,
+                     :proposalamount, :proposedcost, :available_budget,
                      :techapprove, :techsanctionno, :techsanctiondate, :costfinalized,
                      :placeofcorp, :nocattached, :nocofowner,
                      :anydispute, :anycases, :casedetails,
@@ -352,30 +367,174 @@ namespace SmkcApi.Repositories.GAD
                      :achead_code, '.',
                      :budgetforwork, :otherdept, :worksplitted,
                      :workexaminperiod, :proposedbeforeexamin, :sanctionofficers,
+                     :tenderduration, :newspaperlevel,
                      'n', 'y', :entby, SYSDATE,
                      :otherremarks, 1, GAD.SEQQUOTTENREFNO.NEXTVAL)";
 
-            try
+            using (var conn = _connectionFactory.CreateAbas())
             {
-                using (var conn = _connectionFactory.CreateAbas())
-                {
-                    conn.Open();
-                    long orderNo = req.PreGeneratedOrderNo > 0
-                        ? req.PreGeneratedOrderNo
-                        : Convert.ToInt64(new OracleCommand(seqSql, conn).ExecuteScalar());
+                conn.Open();
+                long orderNo = req.PreGeneratedOrderNo > 0
+                    ? req.PreGeneratedOrderNo
+                    : Convert.ToInt64(new OracleCommand(seqSql, conn).ExecuteScalar());
 
-                    using (var cmd = new OracleCommand(insertSql, conn))
+                using (var tx = conn.BeginTransaction())
+                {
+                    try
                     {
-                        AddCommonParams(cmd, ulbCode, orderNo, req);
-                        cmd.ExecuteNonQuery();
+                        decimal remainingAfter;
+                        var capError = CheckProposalBudgetCap(conn, tx, ulbCode, req.AcSubhead, req.DeptCode,
+                            req.FinYear, "T", req.ProposalCost, out remainingAfter);
+                        if (capError != null) { tx.Rollback(); return capError; }
+
+                        using (var cmd = new OracleCommand(insertSql, conn))
+                        {
+                            cmd.Transaction = tx;
+                            cmd.BindByName = true;
+                            AddCommonParams(cmd, ulbCode, orderNo, req);
+                            cmd.Parameters.Add("available_budget", OracleDbType.Decimal).Value = remainingAfter;
+                            cmd.Parameters.Add("tenderduration", OracleDbType.NVarchar2).Value = req.TenderDuration ?? string.Empty;
+                            cmd.Parameters.Add("newspaperlevel", OracleDbType.NVarchar2).Value = req.NewspaperLevel ?? string.Empty;
+                            cmd.ExecuteNonQuery();
+                        }
+                        tx.Commit();
+                        return new WorkProposalSaveResult { Success = true, OrderNo = orderNo, Message = "Tender proposal saved successfully." };
                     }
-                    return new WorkProposalSaveResult { Success = true, OrderNo = orderNo, Message = "Tender proposal saved successfully." };
+                    catch (Exception ex)
+                    {
+                        tx.Rollback();
+                        return new WorkProposalSaveResult { Success = false, Message = ex.Message };
+                    }
                 }
             }
-            catch (Exception ex)
+        }
+
+        // ── Budget cap enforcement for work proposals ─────────────────────────────
+
+        private WorkProposalSaveResult CheckProposalBudgetCap(
+            OracleConnection conn, OracleTransaction tx,
+            int ulbCode, string acSubhead, int deptCode, string finYear,
+            string proposalType, decimal proposalCost, out decimal remainingAfter)
+        {
+            remainingAfter = 0m;
+
+            const string lockSql = @"
+                SELECT AC_SUBHEAD FROM ABASSUBHEADDET
+                WHERE AC_SUBHEAD = :ac_subhead AND ULB_CODE = :ulb_code
+                FOR UPDATE";
+
+            const string budgetSql = @"
+                SELECT NVL(SUM(DEBIT_AMOUNT + CREDIT_AMOUNT), 0) AS TOTAL_BUDGET
+                FROM ABASDEPTBUDJETACTDET
+                WHERE AC_SUBHEAD = :ac_subhead
+                  AND FIN_YEAR   = :fin_year
+                  AND (DEPT_CODE = :dept_code OR DEPT_CODE = 0)";
+
+            const string committedSql = @"
+                SELECT NVL(SUM(amt), 0) FROM (
+                    SELECT NVL(PROPOSEDCOST, 0) AS amt
+                    FROM GAD.GADQUOTATIONORDERSDET
+                    WHERE ACHEAD_CODE = :ac_subhead AND FINYEAR = :fin_year
+                      AND VALIDFLAG = 'y' AND DEPT_CODE = :dept_code
+                    UNION ALL
+                    SELECT NVL(PROPOSEDCOST, 0) AS amt
+                    FROM GAD.GADTENDERORDERSDET
+                    WHERE ACHEAD_CODE = :ac_subhead AND FINYEAR = :fin_year
+                      AND VALIDFLAG = 'y' AND DEPT_CODE = :dept_code
+                )";
+
+            const string capSql = @"
+                SELECT CAP_PERCENTAGE, CAP_AMOUNT
+                FROM GAD.GADBUDGETCAPDET
+                WHERE AC_SUBHEAD = :ac_subhead AND FIN_YEAR = :fin_year
+                  AND ULB_CODE = :ulb_code AND VALIDFLAG = 'y'";
+
+            using (var cmd = new OracleCommand(lockSql, conn))
             {
-                return new WorkProposalSaveResult { Success = false, Message = ex.Message };
+                cmd.Transaction = tx;
+                cmd.BindByName = true;
+                cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                cmd.ExecuteScalar();
             }
+
+            decimal totalBudget = 0m;
+            using (var cmd = new OracleCommand(budgetSql, conn))
+            {
+                cmd.Transaction = tx;
+                cmd.BindByName = true;
+                cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+                cmd.Parameters.Add("dept_code", OracleDbType.Decimal).Value = deptCode;
+                var val = cmd.ExecuteScalar();
+                if (val != null && val != DBNull.Value) totalBudget = Convert.ToDecimal(val);
+            }
+
+            decimal committed = 0m;
+            using (var cmd = new OracleCommand(committedSql, conn))
+            {
+                cmd.Transaction = tx;
+                cmd.BindByName = true;
+                cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+                cmd.Parameters.Add("dept_code", OracleDbType.Decimal).Value = deptCode;
+                var val = cmd.ExecuteScalar();
+                if (val != null && val != DBNull.Value) committed = Convert.ToDecimal(val);
+            }
+
+            decimal? capPct = null, capAmt = null;
+            try
+            {
+                using (var cmd = new OracleCommand(capSql, conn))
+                {
+                    cmd.Transaction = tx;
+                    cmd.BindByName = true;
+                    cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                    cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+                    cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                    using (var r = cmd.ExecuteReader())
+                    {
+                        if (r.Read())
+                        {
+                            if (r["CAP_PERCENTAGE"] != DBNull.Value) capPct = Convert.ToDecimal(r["CAP_PERCENTAGE"]);
+                            if (r["CAP_AMOUNT"]     != DBNull.Value) capAmt = Convert.ToDecimal(r["CAP_AMOUNT"]);
+                        }
+                    }
+                }
+            }
+            catch { /* cap table may not exist */ }
+
+            // Compute effective budget (mirrors GetBudgetInfo)
+            decimal effectiveBudget = totalBudget;
+            if (capAmt.HasValue && capAmt.Value > 0)
+                effectiveBudget = capAmt.Value;
+            else if (capPct.HasValue && capPct.Value > 0)
+                effectiveBudget = Math.Round(totalBudget * capPct.Value / 100m, 0);
+
+            // Apply proposal-type cap rules (mirrors GetBudgetInfo)
+            var pt = (proposalType ?? string.Empty).Trim().ToUpperInvariant();
+            if (pt == "OTHER")
+                effectiveBudget = totalBudget;
+            else if (pt == "Q" && effectiveBudget > 100000m)
+                effectiveBudget = totalBudget;
+            else if (pt == "T" && effectiveBudget <= 100000m && effectiveBudget < totalBudget)
+                effectiveBudget = totalBudget;
+
+            decimal remaining = effectiveBudget - committed;
+            remainingAfter = remaining - proposalCost;
+
+            if (proposalCost > remaining)
+            {
+                return new WorkProposalSaveResult
+                {
+                    Success = false,
+                    Message = string.Format(
+                        "\u0905\u092a\u0941\u0930\u093e \u0924\u0930\u0924\u0942\u0926: \u0932\u0947\u0916\u093e\u0936\u0940\u0930\u094d\u0937\u093e\u0924 \u0936\u093f\u0932\u094d\u0932\u0915 \u0930\u0915\u094d\u0915\u092e \u20b9{0:N0} \u0905\u0938\u0942\u0928 \u092a\u094d\u0930\u0938\u094d\u0924\u093e\u0935\u093f\u0924 \u0930\u0915\u094d\u0915\u092e \u20b9{1:N0} \u091c\u093e\u0938\u094d\u0924 \u0906\u0939\u0947.",
+                        remaining, proposalCost),
+                };
+            }
+
+            return null;
         }
 
         // ── Shared parameter helper ───────────────────────────────────────────────
@@ -428,7 +587,7 @@ namespace SmkcApi.Repositories.GAD
 
         // ── GetProposals (list for dept) ─────────────────────────────────────────
 
-        public IEnumerable<WorkProposalListDto> GetProposals(int ulbCode, string userId, string finYear, bool requireAccountRemark, string search, int pageSize, int pageNo, out int totalCount)
+        public IEnumerable<WorkProposalListDto> GetProposals(int ulbCode, string userId, string finYear, bool requireAccountRemark, string search, int pageSize, int pageNo, out int totalCount, string sortCol = null, string sortDir = null)
         {
             // PTTEST01 and ADMIN001 see all departments; all others see only their own dept
             bool showAll = string.IsNullOrWhiteSpace(userId)
@@ -439,13 +598,28 @@ namespace SmkcApi.Repositories.GAD
             string searchFilterQ = hasSearch
                 ? @"AND (UPPER(q.PROPOSALNAME) LIKE '%' || UPPER(:search) || '%'
                      OR TO_CHAR(q.NASTINO) LIKE '%' || :search || '%'
-                     OR UPPER(q.ACHEAD_CODE) LIKE '%' || UPPER(:search) || '%')"
+                     OR UPPER(q.ACHEAD_CODE) LIKE '%' || UPPER(:search) || '%'
+                     OR UPPER(NVL(d.DEPT_NAMELL_UNICODE, NVL(d.DEPT_NAMELL, d.DEPT_NAME))) LIKE '%' || UPPER(:search) || '%')"
                 : string.Empty;
             string searchFilterT = hasSearch
                 ? @"AND (UPPER(t.PROPOSALNAME) LIKE '%' || UPPER(:search) || '%'
                      OR TO_CHAR(t.NASTINO) LIKE '%' || :search || '%'
-                     OR UPPER(t.ACHEAD_CODE) LIKE '%' || UPPER(:search) || '%')"
+                     OR UPPER(t.ACHEAD_CODE) LIKE '%' || UPPER(:search) || '%'
+                     OR UPPER(NVL(d.DEPT_NAMELL_UNICODE, NVL(d.DEPT_NAMELL, d.DEPT_NAME))) LIKE '%' || UPPER(:search) || '%')"
                 : string.Empty;
+
+            // Build ORDER BY from sortCol / sortDir (whitelist to prevent injection)
+            string orderCol;
+            switch ((sortCol ?? string.Empty).ToLowerInvariant())
+            {
+                case "nastino":   orderCol = "ORDER_NO";     break;
+                case "dept":      orderCol = "DEPT_NAME";    break;
+                case "workname":  orderCol = "WORK_NAME";    break;
+                case "acsubhead": orderCol = "ACHEAD_CODE";  break;
+                case "cost":      orderCol = "PROPOSEDCOST"; break;
+                default:          orderCol = "ENT_DT";       break;
+            }
+            string orderDir = string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
 
             // When requireAccountRemark=true (audit dept), only show proposals accounts has processed
             string acctFilter = requireAccountRemark
@@ -463,7 +637,14 @@ namespace SmkcApi.Repositories.GAD
                        q.ACHEAD_CODE,
                        (SELECT NVL(AC_SUBHEADNAMELL_UNICODE, NVL(AC_SUBHEADNAMELL, AC_SUBHEADNAME))
                           FROM ABAS.ABASSUBHEADDET WHERE AC_SUBHEAD = q.ACHEAD_CODE AND VALIDFLAG = 'y' AND ROWNUM = 1) AS AC_SUBHEAD_NAME,
-                       q.PROPOSEDCOST, q.ENTBY AS ENT_BY, q.ENTDT AS ENT_DT, q.WARDNO AS WARD_NO
+                       q.PROPOSEDCOST, q.ENTBY AS ENT_BY, q.ENTDT AS ENT_DT, q.WARDNO AS WARD_NO,
+                       (SELECT CASE WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 2 THEN 'final'
+                                    WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 1 THEN 'primary'
+                                    ELSE NULL END
+                          FROM ABAS.ABASBUDGETBOOKENTRY bb
+                         WHERE bb.NASTINO = q.NASTINO AND bb.ULB_CODE = :ulb_code
+                           AND bb.FIN_YEAR = :fin_year
+                           AND (bb.CANCELLED IS NULL OR UPPER(bb.CANCELLED) <> 'Y')) AS BB_STATUS
                 FROM GAD.GADQUOTATIONORDERSDET q
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                   ON d.DEPT_CODE = q.DEPT_CODE AND d.ULB_CODE = q.ULB_CODE
@@ -480,7 +661,14 @@ namespace SmkcApi.Repositories.GAD
                        t.ACHEAD_CODE,
                        (SELECT NVL(AC_SUBHEADNAMELL_UNICODE, NVL(AC_SUBHEADNAMELL, AC_SUBHEADNAME))
                           FROM ABAS.ABASSUBHEADDET WHERE AC_SUBHEAD = t.ACHEAD_CODE AND VALIDFLAG = 'y' AND ROWNUM = 1) AS AC_SUBHEAD_NAME,
-                       t.PROPOSEDCOST, t.ENTBY AS ENT_BY, t.ENTDT AS ENT_DT, t.WARDNO AS WARD_NO
+                       t.PROPOSEDCOST, t.ENTBY AS ENT_BY, t.ENTDT AS ENT_DT, t.WARDNO AS WARD_NO,
+                       (SELECT CASE WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 2 THEN 'final'
+                                    WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 1 THEN 'primary'
+                                    ELSE NULL END
+                          FROM ABAS.ABASBUDGETBOOKENTRY bb
+                         WHERE bb.NASTINO = t.NASTINO AND bb.ULB_CODE = :ulb_code
+                           AND bb.FIN_YEAR = :fin_year
+                           AND (bb.CANCELLED IS NULL OR UPPER(bb.CANCELLED) <> 'Y')) AS BB_STATUS
                 FROM GAD.GADTENDERORDERSDET t
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                   ON d.DEPT_CODE = t.DEPT_CODE AND d.ULB_CODE = t.ULB_CODE
@@ -496,7 +684,14 @@ namespace SmkcApi.Repositories.GAD
                        q.ACHEAD_CODE,
                        (SELECT NVL(AC_SUBHEADNAMELL_UNICODE, NVL(AC_SUBHEADNAMELL, AC_SUBHEADNAME))
                           FROM ABAS.ABASSUBHEADDET WHERE AC_SUBHEAD = q.ACHEAD_CODE AND VALIDFLAG = 'y' AND ROWNUM = 1) AS AC_SUBHEAD_NAME,
-                       q.PROPOSEDCOST, q.ENTBY AS ENT_BY, q.ENTDT AS ENT_DT, q.WARDNO AS WARD_NO
+                       q.PROPOSEDCOST, q.ENTBY AS ENT_BY, q.ENTDT AS ENT_DT, q.WARDNO AS WARD_NO,
+                       (SELECT CASE WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 2 THEN 'final'
+                                    WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 1 THEN 'primary'
+                                    ELSE NULL END
+                          FROM ABAS.ABASBUDGETBOOKENTRY bb
+                         WHERE bb.NASTINO = q.NASTINO AND bb.ULB_CODE = :ulb_code
+                           AND bb.FIN_YEAR = :fin_year
+                           AND (bb.CANCELLED IS NULL OR UPPER(bb.CANCELLED) <> 'Y')) AS BB_STATUS
                 FROM GAD.GADQUOTATIONORDERSDET q
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                   ON d.DEPT_CODE = q.DEPT_CODE AND d.ULB_CODE = q.ULB_CODE
@@ -516,7 +711,14 @@ namespace SmkcApi.Repositories.GAD
                        t.ACHEAD_CODE,
                        (SELECT NVL(AC_SUBHEADNAMELL_UNICODE, NVL(AC_SUBHEADNAMELL, AC_SUBHEADNAME))
                           FROM ABAS.ABASSUBHEADDET WHERE AC_SUBHEAD = t.ACHEAD_CODE AND VALIDFLAG = 'y' AND ROWNUM = 1) AS AC_SUBHEAD_NAME,
-                       t.PROPOSEDCOST, t.ENTBY AS ENT_BY, t.ENTDT AS ENT_DT, t.WARDNO AS WARD_NO
+                       t.PROPOSEDCOST, t.ENTBY AS ENT_BY, t.ENTDT AS ENT_DT, t.WARDNO AS WARD_NO,
+                       (SELECT CASE WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 2 THEN 'final'
+                                    WHEN MAX(CASE WHEN bb.STATUS = 'y' THEN 2 ELSE 1 END) >= 1 THEN 'primary'
+                                    ELSE NULL END
+                          FROM ABAS.ABASBUDGETBOOKENTRY bb
+                         WHERE bb.NASTINO = t.NASTINO AND bb.ULB_CODE = :ulb_code
+                           AND bb.FIN_YEAR = :fin_year
+                           AND (bb.CANCELLED IS NULL OR UPPER(bb.CANCELLED) <> 'Y')) AS BB_STATUS
                 FROM GAD.GADTENDERORDERSDET t
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                   ON d.DEPT_CODE = t.DEPT_CODE AND d.ULB_CODE = t.ULB_CODE
@@ -531,7 +733,7 @@ namespace SmkcApi.Repositories.GAD
 
             int offset = (pageNo - 1) * pageSize;
             string countSql = "SELECT COUNT(*) FROM (" + innerSql + ")";
-            string dataSql  = "SELECT * FROM (" + innerSql + ") ORDER BY ENT_DT DESC OFFSET :offset ROWS FETCH NEXT :page_size ROWS ONLY";
+            string dataSql  = "SELECT * FROM (" + innerSql + ") ORDER BY " + orderCol + " " + orderDir + " OFFSET :offset ROWS FETCH NEXT :page_size ROWS ONLY";
 
             var result = new List<WorkProposalListDto>();
             using (var conn = _connectionFactory.CreateAbas())
@@ -584,6 +786,7 @@ namespace SmkcApi.Repositories.GAD
                                 EnteredBy    = r["ENT_BY"] as string ?? string.Empty,
                                 EntryDate    = r["ENT_DT"] == DBNull.Value ? DateTime.MinValue : Convert.ToDateTime(r["ENT_DT"]),
                                 WardNos      = r["WARD_NO"] as string ?? string.Empty,
+                                BudgetEntryStatus = r["BB_STATUS"] == DBNull.Value ? null : r["BB_STATUS"] as string,
                             });
                         }
                     }
@@ -598,6 +801,9 @@ namespace SmkcApi.Repositories.GAD
         {
             bool isQuotation = string.Equals(proposalType, "Q", StringComparison.OrdinalIgnoreCase);
             string tableName = isQuotation ? "GAD.GADQUOTATIONORDERSDET" : "GAD.GADTENDERORDERSDET";
+            string tenderFields = isQuotation
+                ? "'' AS TENDER_DURATION, '' AS NEWSPAPER_LEVEL"
+                : "t.TENDERDURATION AS TENDER_DURATION, t.NEWSPAPERLEVEL AS NEWSPAPER_LEVEL";
 
             string sql = string.Format(@"
                 SELECT t.NASTINO AS ORDER_NO, '{0}' AS PROPOSAL_TYPE, t.FINYEAR, t.DEPT_CODE,
@@ -627,12 +833,13 @@ namespace SmkcApi.Repositories.GAD
                        t.WORKEXAMINPERIOD AS MAINTENANCE_PERIOD,
                        t.PROPOSEDBEFOREEXAMIN AS PREV_MAINTENANCE,
                        t.SANCTIONOFFICERS AS OFFICER,
+                       {2},
                        t.OTHERREMARKS AS REMARK, t.ENTBY AS ENT_BY, t.ENTDT AS ENT_DT
                 FROM {1} t
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                   ON d.DEPT_CODE = t.DEPT_CODE AND d.ULB_CODE = t.ULB_CODE
                 WHERE t.ULB_CODE  = :ulb_code
-                  AND t.NASTINO   = :order_no", isQuotation ? "Q" : "T", tableName);
+                                    AND t.NASTINO   = :order_no", isQuotation ? "Q" : "T", tableName, tenderFields);
 
             using (var conn = _connectionFactory.CreateAbas())
             using (var cmd = new OracleCommand(sql, conn))
@@ -686,6 +893,8 @@ namespace SmkcApi.Repositories.GAD
                         MaintenancePeriod= r["MAINTENANCE_PERIOD"] as string ?? string.Empty,
                         PrevMaintenance  = r["PREV_MAINTENANCE"] as string ?? string.Empty,
                         CompetentOfficer = r["OFFICER"] as string ?? string.Empty,
+                        TenderDuration   = r["TENDER_DURATION"] as string ?? string.Empty,
+                        NewspaperLevel    = r["NEWSPAPER_LEVEL"] as string ?? string.Empty,
                         Remarks          = r["REMARK"] as string ?? string.Empty,
                         EnteredBy        = r["ENT_BY"] as string ?? string.Empty,
                         EntryDate        = r["ENT_DT"] == DBNull.Value ? DateTime.MinValue : Convert.ToDateTime(r["ENT_DT"]),
@@ -1016,7 +1225,7 @@ namespace SmkcApi.Repositories.GAD
                 + (string.IsNullOrWhiteSpace(finYear) ? "" : " AND t.FINYEAR = :fin_year")
                 + " AND ROWNUM = 1";
 
-            using (var conn = _connectionFactory.CreateAbas())
+            using (var conn = _connectionFactory.CreateGad())
             {
                 conn.Open();
 

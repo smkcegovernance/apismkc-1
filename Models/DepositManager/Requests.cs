@@ -40,6 +40,23 @@ namespace SmkcApi.Models.DepositManager
         public string AuthorizedBy { get; set; }
     }
 
+    public class InvalidateRequirementRequest
+    {
+        public string InvalidatedBy { get; set; }
+        public string InvalidationReason { get; set; }
+
+        public ApiResponse Validate()
+        {
+            if (string.IsNullOrWhiteSpace(InvalidatedBy))
+                return new ApiResponse { Success = false, Message = "invalidatedBy is required" };
+            if (string.IsNullOrWhiteSpace(InvalidationReason) || InvalidationReason.Trim().Length < 5)
+                return new ApiResponse { Success = false, Message = "invalidationReason must be at least 5 characters" };
+            if (InvalidationReason.Length > 500)
+                return new ApiResponse { Success = false, Message = "invalidationReason must not exceed 500 characters" };
+            return new ApiResponse { Success = true, Message = "OK" };
+        }
+    }
+
     public class SubmitQuoteRequest
     {
         public string RequirementId { get; set; }

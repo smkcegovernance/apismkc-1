@@ -23,7 +23,7 @@ namespace SmkcApi.Repositories.GAD
 
         /// <summary>Returns work proposals list filtered by userId's department (PTTEST01/ADMIN001 see all).
         /// If requireAccountRemark=true, only returns proposals where accounts have added AUDIT_REMARK.</summary>
-        IEnumerable<WorkProposalListDto> GetProposals(int ulbCode, string userId, string finYear, bool requireAccountRemark, string search, int pageSize, int pageNo, out int totalCount);
+        IEnumerable<WorkProposalListDto> GetProposals(int ulbCode, string userId, string finYear, bool requireAccountRemark, string search, int pageSize, int pageNo, out int totalCount, string sortCol = null, string sortDir = null);
 
         /// <summary>Returns full detail of a single proposal for the print report.</summary>
         WorkProposalDetailDto GetProposalDetail(int ulbCode, string proposalType, long orderNo);

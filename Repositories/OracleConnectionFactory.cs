@@ -12,6 +12,7 @@ namespace SmkcApi.Repositories
         OracleConnection CreateUlberp();
         OracleConnection CreateAbas();
         OracleConnection CreateWebsite();
+        OracleConnection CreateGad();
     }
 
     public class OracleConnectionFactory : IOracleConnectionFactory
@@ -48,6 +49,12 @@ namespace SmkcApi.Repositories
         public OracleConnection CreateWebsite()
         {
             var cs = ConfigurationManager.ConnectionStrings["OracleDbWebsite"].ConnectionString;
+            return new OracleConnection(cs);
+        }
+
+        public OracleConnection CreateGad()
+        {
+            var cs = ConfigurationManager.ConnectionStrings["OracleDbGad"].ConnectionString;
             return new OracleConnection(cs);
         }
     }

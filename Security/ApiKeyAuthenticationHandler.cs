@@ -30,6 +30,7 @@ namespace SmkcApi.Security
         // Public endpoints that don't require authentication
         private static readonly string[] PublicEndpoints = new[]
         {
+            "/swagger",                     // Swagger UI and spec
             "/api/auth/login",              // Unified login endpoint
             "/api/auth/bank/login",
             "/api/auth/account/login",
@@ -56,6 +57,8 @@ namespace SmkcApi.Security
             "/api/accounts/budget-book", // Budget book entry — internal ERP use, no API key needed
             "/api/gad/work-proposals",  // GAD work proposals — internal ERP use, no API key needed
             "/api/gad/budget-cap",      // GAD budget cap management — accounts dept only
+            "/api/gad/samaj",           // GAD samaj work orders — internal ERP use, no API key needed
+            "/api/gad/work-order",      // GAD work orders — internal ERP use, no API key needed
             "/api/user-rights"          // ERP user rights management — internal admin use, no API key needed
         };
 

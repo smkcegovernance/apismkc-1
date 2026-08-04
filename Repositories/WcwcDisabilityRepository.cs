@@ -10,14 +10,17 @@ namespace SmkcApi.Repositories
     public interface IWcwcDisabilityRepository
     {
         WcwcOperationResult<WcwcRegistrationSaveData> SaveRegistration(WcwcRegistrationUpsertRequest request, int? registrationId);
+        WcwcOperationResult<WcwcDuplicateRegistrationInfo> FindDuplicateByContactNumbers(string aadhaarNumber, string mobileNumber, int? excludeRegistrationId);
         WcwcOperationResult<object> ReplaceDisabilities(int registrationId, IEnumerable<int> disabilityTypeIds);
         WcwcOperationResult<object> ReplaceDevices(int registrationId, IEnumerable<int> assistiveDeviceIds);
         WcwcOperationResult<object> UpsertDocument(int registrationId, string documentCode, string fileName, string mimeType, long fileSize, int? uploadedByOperatorId);
         WcwcOperationResult<object> GetRegistration(int? registrationId, string registrationNumber);
+        WcwcOperationResult<object> GetApplicationStatus(string registrationNumber);
         WcwcOperationResult<object> SearchRegistrations(string searchText, string status, string applicationMode, int? operatorUserId);
         WcwcOperationResult<object> UpdateStatus(int registrationId, string status, int? operatorUserId, string remarks);
         WcwcOperationResult<object> OperatorLogin(string userName, string passwordHash);
         WcwcOperationResult<object> ResolveRegistration(string identifier);
+        WcwcOperationResult<object> GetReport(string reportType, DateTime? fromDate, DateTime? toDate, string applicationMode);
     }
 
     public class WcwcDisabilityRepository : IWcwcDisabilityRepository
@@ -48,6 +51,8 @@ namespace SmkcApi.Repositories
                     AddNullable(command, "P_MOTHER_NAME", OracleDbType.NVarchar2, request.MotherName);
                     AddNullable(command, "P_EDUCATION", OracleDbType.NVarchar2, request.Education);
                     AddNullable(command, "P_AADHAAR_NUMBER", OracleDbType.Varchar2, request.AadhaarNumber);
+                    AddNullable(command, "P_RATION_CARD_NUMBER", OracleDbType.NVarchar2, request.RationCardNumber);
+                    AddNullable(command, "P_RATION_CARD_COLOR", OracleDbType.NVarchar2, request.RationCardColor);
                     AddNullable(command, "P_DOB", OracleDbType.Date, ParseDate(request.Dob));
                     AddNullable(command, "P_MARITAL_STATUS", OracleDbType.NVarchar2, request.MaritalStatus);
                     AddNullable(command, "P_RELIGION", OracleDbType.NVarchar2, request.Religion);
@@ -138,6 +143,75 @@ namespace SmkcApi.Repositories
             catch (Exception ex)
             {
                 return new WcwcOperationResult<WcwcRegistrationSaveData> { Success = false, Message = ex.Message, ErrorCode = "SAVE_EXCEPTION" };
+            }
+        }
+
+        public WcwcOperationResult<WcwcDuplicateRegistrationInfo> FindDuplicateByContactNumbers(string aadhaarNumber, string mobileNumber, int? excludeRegistrationId)
+        {
+            try
+            {
+                using (var connection = _connectionFactory.Create())
+                using (var command = new OracleCommand(@"
+                    SELECT *
+                      FROM (
+                            SELECT REGISTRATION_ID,
+                                   REGISTRATION_NO,
+                                   STATUS,
+                                   CASE
+                                     WHEN AADHAAR_NUMBER = :P_AADHAAR_NUMBER AND MOBILE_NUMBER = :P_MOBILE_NUMBER THEN 'AADHAAR_AND_MOBILE'
+                                     WHEN AADHAAR_NUMBER = :P_AADHAAR_NUMBER THEN 'AADHAAR'
+                                     ELSE 'MOBILE'
+                                   END AS DUPLICATE_FIELD
+                              FROM TBL_WCWC_REGISTRATIONS
+                             WHERE (:P_EXCLUDE_REG_ID IS NULL OR REGISTRATION_ID <> :P_EXCLUDE_REG_ID)
+                               AND (AADHAAR_NUMBER = :P_AADHAAR_NUMBER OR MOBILE_NUMBER = :P_MOBILE_NUMBER)
+                             ORDER BY UPDATED_AT DESC, CREATED_AT DESC
+                           )
+                     WHERE ROWNUM = 1", connection))
+                {
+                    connection.Open();
+                    command.CommandType = CommandType.Text;
+                    command.BindByName = true;
+
+                    AddNullable(command, "P_AADHAAR_NUMBER", OracleDbType.Varchar2, aadhaarNumber);
+                    AddNullable(command, "P_MOBILE_NUMBER", OracleDbType.Varchar2, mobileNumber);
+                    AddNullable(command, "P_EXCLUDE_REG_ID", OracleDbType.Decimal, excludeRegistrationId);
+
+                    using (var reader = command.ExecuteReader())
+                    {
+                        if (!reader.Read())
+                        {
+                            return new WcwcOperationResult<WcwcDuplicateRegistrationInfo>
+                            {
+                                Success = true,
+                                Message = "No duplicate registration found",
+                                Data = null
+                            };
+                        }
+
+                        return new WcwcOperationResult<WcwcDuplicateRegistrationInfo>
+                        {
+                            Success = true,
+                            Message = "Duplicate registration found",
+                            Data = new WcwcDuplicateRegistrationInfo
+                            {
+                                RegistrationId = reader["REGISTRATION_ID"] == DBNull.Value ? 0 : Convert.ToInt32(reader["REGISTRATION_ID"]),
+                                RegistrationNumber = reader["REGISTRATION_NO"] == DBNull.Value ? string.Empty : Convert.ToString(reader["REGISTRATION_NO"]),
+                                Status = reader["STATUS"] == DBNull.Value ? string.Empty : Convert.ToString(reader["STATUS"]),
+                                DuplicateField = reader["DUPLICATE_FIELD"] == DBNull.Value ? string.Empty : Convert.ToString(reader["DUPLICATE_FIELD"])
+                            }
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return new WcwcOperationResult<WcwcDuplicateRegistrationInfo>
+                {
+                    Success = false,
+                    Message = ex.Message,
+                    ErrorCode = "DUPLICATE_CHECK_EXCEPTION"
+                };
             }
         }
 
@@ -319,6 +393,77 @@ namespace SmkcApi.Repositories
             }
 
             return GetRegistration(null, identifier);
+        }
+
+        public WcwcOperationResult<object> GetApplicationStatus(string registrationNumber)
+        {
+            try
+            {
+                using (var connection = _connectionFactory.Create())
+                using (var command = new OracleCommand("SP_WCWC_GET_APPLICATION_STATUS", connection))
+                {
+                    connection.Open();
+                    InitializeCommand(command);
+                    AddNullable(command, "P_REGISTRATION_NO", OracleDbType.Varchar2, registrationNumber);
+                    command.Parameters.Add("O_SUCCESS", OracleDbType.Int32).Direction = ParameterDirection.Output;
+                    command.Parameters.Add("O_MESSAGE", OracleDbType.Varchar2, 4000).Direction = ParameterDirection.Output;
+                    command.Parameters.Add("O_STATUS_DATA", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
+                    command.ExecuteNonQuery();
+
+                    var success = ConvertToInt(command.Parameters["O_SUCCESS"].Value) == 1;
+                    var message = Convert.ToString(command.Parameters["O_MESSAGE"].Value);
+                    if (!success)
+                        return new WcwcOperationResult<object> { Success = false, Message = message, ErrorCode = "REGISTRATION_NOT_FOUND" };
+
+                    return new WcwcOperationResult<object>
+                    {
+                        Success = true,
+                        Message = message,
+                        Data = ReadRefCursor(command.Parameters["O_STATUS_DATA"].Value)
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new WcwcOperationResult<object> { Success = false, Message = ex.Message, ErrorCode = "STATUS_EXCEPTION" };
+            }
+        }
+
+        public WcwcOperationResult<object> GetReport(string reportType, DateTime? fromDate, DateTime? toDate, string applicationMode)
+        {
+            try
+            {
+                using (var connection = _connectionFactory.Create())
+                using (var command = new OracleCommand("SP_WCWC_GET_REPORT", connection))
+                {
+                    connection.Open();
+                    InitializeCommand(command);
+                    AddNullable(command, "P_REPORT_TYPE", OracleDbType.Varchar2, (reportType ?? "ALL").ToUpperInvariant());
+                    AddNullable(command, "P_FROM_DATE", OracleDbType.Date, fromDate.HasValue ? (object)fromDate.Value : DBNull.Value);
+                    AddNullable(command, "P_TO_DATE", OracleDbType.Date, toDate.HasValue ? (object)toDate.Value : DBNull.Value);
+                    AddNullable(command, "P_APPLICATION_MODE", OracleDbType.Varchar2, applicationMode);
+                    command.Parameters.Add("O_SUCCESS", OracleDbType.Int32).Direction = ParameterDirection.Output;
+                    command.Parameters.Add("O_MESSAGE", OracleDbType.Varchar2, 4000).Direction = ParameterDirection.Output;
+                    command.Parameters.Add("O_REPORT_DATA", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
+                    command.ExecuteNonQuery();
+
+                    var success = ConvertToInt(command.Parameters["O_SUCCESS"].Value) == 1;
+                    var message = Convert.ToString(command.Parameters["O_MESSAGE"].Value);
+                    if (!success)
+                        return new WcwcOperationResult<object> { Success = false, Message = message, ErrorCode = "REPORT_FAILED" };
+
+                    return new WcwcOperationResult<object>
+                    {
+                        Success = true,
+                        Message = message,
+                        Data = ReadRefCursor(command.Parameters["O_REPORT_DATA"].Value)
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new WcwcOperationResult<object> { Success = false, Message = ex.Message, ErrorCode = "REPORT_EXCEPTION" };
+            }
         }
 
         private WcwcOperationResult<object> ExecuteListProcedure(string procedureName, string listParameterName, int registrationId, IEnumerable<int> ids)

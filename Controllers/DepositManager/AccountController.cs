@@ -310,6 +310,58 @@ namespace SmkcApi.Controllers.DepositManager
         }
 
         /// <summary>
+        /// Invalidate a requirement (change status from published to invalidated)
+        /// POST: /api/deposits/account/requirements/{id}/invalidate
+        /// </summary>
+        [HttpPost]
+        [Route("requirements/{id}/invalidate")]
+        public HttpResponseMessage InvalidateRequirement(string id, [FromBody] InvalidateRequirementRequest req)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    LogRequest("InvalidateRequirement - Invalid ID", false);
+                    return Request.CreateResponse(HttpStatusCode.BadRequest,
+                        new ApiResponse { Success = false, Message = "Requirement ID is required", Error = "INVALID_PARAMETER" });
+                }
+
+                var val = req?.Validate();
+                if (val == null || !val.Success)
+                {
+                    LogRequest("InvalidateRequirement - Validation Failed", false);
+                    return Request.CreateResponse(HttpStatusCode.BadRequest,
+                        val ?? new ApiResponse { Success = false, Message = "Invalid request" });
+                }
+
+                var res = _service.InvalidateRequirement(id, req.InvalidatedBy, req.InvalidationReason);
+
+                if (!res.Success)
+                {
+                    LogRequest(string.Format("InvalidateRequirement - Failed for ID: {0}", id), false);
+
+                    if (!string.IsNullOrEmpty(res.Message) && res.Message.ToLower().IndexOf("not found") >= 0)
+                        return Request.CreateResponse(HttpStatusCode.NotFound, res);
+
+                    if (res.Error == "INVALID_STATUS" ||
+                        (!string.IsNullOrEmpty(res.Message) && res.Message.ToLower().IndexOf("allowed only") >= 0))
+                        return Request.CreateResponse(HttpStatusCode.Conflict, res);
+
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, res);
+                }
+
+                LogRequest(string.Format("InvalidateRequirement - Success for ID: {0}", id), true);
+                return Request.CreateResponse(HttpStatusCode.NoContent);
+            }
+            catch (Exception ex)
+            {
+                LogError(string.Format("InvalidateRequirement - ID: {0}", id), ex);
+                return Request.CreateResponse(HttpStatusCode.InternalServerError,
+                    new ApiResponse { Success = false, Message = "An error occurred while processing your request", Error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Get all registered banks
         /// GET: /api/deposits/account/banks
         /// </summary>
