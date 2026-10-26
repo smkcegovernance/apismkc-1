@@ -174,10 +174,6 @@ namespace SmkcApi.Repositories.BudgetBook
             }
 
             decimal effectiveBudget = totalBudget;
-            if (capAmt.HasValue && capAmt.Value > 0)
-                effectiveBudget = capAmt.Value;
-            else if (capPct.HasValue && capPct.Value > 0)
-                effectiveBudget = Math.Round(totalBudget * capPct.Value / 100m, 0);
 
             return new BudgetRemainingDto
             {
@@ -188,7 +184,8 @@ namespace SmkcApi.Repositories.BudgetBook
                 CapPercentage = capPct,
                 CapAmount = capAmt,
                 CommittedAmount = committed,
-                RemainingBudget = effectiveBudget - committed,
+                // Provision/availability for budget-book flows must use actual budget provision.
+                RemainingBudget = totalBudget - committed,
             };
         }
 
@@ -279,38 +276,7 @@ namespace SmkcApi.Repositories.BudgetBook
                                 committedForStorage = Convert.ToDecimal(val);
                         }
 
-                        // Apply cap (if any) to compute effective budget
-                        decimal effectiveBudget = totalBudget;
-                        const string capSqlInner = @"
-                            SELECT CAP_PERCENTAGE, CAP_AMOUNT
-                            FROM GAD.GADBUDGETCAPDET
-                            WHERE AC_SUBHEAD = :ac_subhead AND FIN_YEAR = :fin_year
-                              AND ULB_CODE = :ulb_code AND VALIDFLAG = 'y'";
-                        try
-                        {
-                            using (var cmd = new OracleCommand(capSqlInner, conn))
-                            {
-                                cmd.Transaction = tx;
-                                cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = request.AcSubhead;
-                                cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = request.FinYear;
-                                cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
-                                using (var r = cmd.ExecuteReader())
-                                {
-                                    if (r.Read())
-                                    {
-                                        decimal? capPct = r["CAP_PERCENTAGE"] != DBNull.Value ? (decimal?)Convert.ToDecimal(r["CAP_PERCENTAGE"]) : null;
-                                        decimal? capAmt = r["CAP_AMOUNT"]     != DBNull.Value ? (decimal?)Convert.ToDecimal(r["CAP_AMOUNT"])     : null;
-                                        if (capAmt.HasValue && capAmt.Value > 0)
-                                            effectiveBudget = capAmt.Value;
-                                        else if (capPct.HasValue && capPct.Value > 0)
-                                            effectiveBudget = Math.Round(totalBudget * capPct.Value / 100m, 0);
-                                    }
-                                }
-                            }
-                        }
-                        catch { /* cap table may not exist */ }
-
-                        decimal remaining = effectiveBudget - committedForStorage;
+                        decimal remaining = totalBudget - committedForStorage;
 
                         if (request.ProposedAmount > remaining)
                         {
@@ -334,7 +300,7 @@ namespace SmkcApi.Repositories.BudgetBook
                             cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = request.AcSubhead;
                             cmd.Parameters.Add("proposed_amount", OracleDbType.Decimal).Value = request.ProposedAmount;
                             cmd.Parameters.Add("budget_amount", OracleDbType.Decimal).Value = totalBudget;
-                            cmd.Parameters.Add("remaining_budget", OracleDbType.Decimal).Value = effectiveBudget - committedForStorage - request.ProposedAmount;
+                            cmd.Parameters.Add("remaining_budget", OracleDbType.Decimal).Value = totalBudget - committedForStorage - request.ProposedAmount;
                             cmd.Parameters.Add("entered_by", OracleDbType.Varchar2).Value = TruncateString(request.EnteredBy, 8);
                             cmd.Parameters.Add("entry_date", OracleDbType.Date).Value = DateTime.Now;
                             cmd.Parameters.Add("dept_code", OracleDbType.Decimal).Value = request.DeptCode;
@@ -355,7 +321,7 @@ namespace SmkcApi.Repositories.BudgetBook
                             Success = true,
                             Message = "प्राथमिक तरतूद नोंद यशस्वीरित्या जतन झाली.",
                             BookEntryNo = newBookEntryNo,
-                            RemainingBudget = effectiveBudget - committedForStorage - request.ProposedAmount,
+                            RemainingBudget = totalBudget - committedForStorage - request.ProposedAmount,
                         };
                     }
                     catch (Exception ex)
@@ -384,7 +350,11 @@ namespace SmkcApi.Repositories.BudgetBook
                        b.STATUS, b.CANCELLED, b.DEPT_CODE, b.WORK_NAME, b.NASTINO, b.FILETYPE,
                        d.DEPT_NAME,
                        s.AC_SUBHEADNAMELL_UNICODE,
-                       s.AC_SUBHEADNAMELL
+                       s.AC_SUBHEADNAMELL,
+                       r.OLD_FINAL_AMOUNT AS PREVIOUS_FINAL_AMOUNT,
+                       r.NEW_FINAL_AMOUNT AS REVISED_FINAL_AMOUNT,
+                       r.REVISION_REMARK,
+                       r.REVISED_AT AS REVISION_DATE
                 FROM ABASBUDGETBOOKENTRY b
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                        ON d.DEPT_CODE = b.DEPT_CODE AND d.ULB_CODE = b.ULB_CODE
@@ -395,6 +365,17 @@ namespace SmkcApi.Repositories.BudgetBook
                        FROM ABASSUBHEADDET
                        GROUP BY AC_SUBHEAD, ULB_CODE
                 ) s ON s.AC_SUBHEAD = b.AC_SUBHEAD AND s.ULB_CODE = b.ULB_CODE
+                LEFT JOIN (
+                       SELECT ULB_CODE, BOOKENTRYNO, FINALBOOKENTRYNO, OLD_FINAL_AMOUNT, NEW_FINAL_AMOUNT,
+                              REVISION_REMARK, REVISED_AT,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY ULB_CODE, BOOKENTRYNO
+                                  ORDER BY REVISED_AT DESC, AUDIT_ID DESC
+                              ) AS RN
+                       FROM ABASBUDGETBOOK_REV_AUDIT
+                ) r ON r.ULB_CODE = b.ULB_CODE
+                   AND r.BOOKENTRYNO = b.BOOKENTRYNO
+                   AND r.RN = 1
                 WHERE b.ULB_CODE = :ulb_code AND b.BOOKENTRYNO = :book_entry_no";
 
             using (var conn = _connectionFactory.CreateAbas())
@@ -406,7 +387,24 @@ namespace SmkcApi.Repositories.BudgetBook
                 using (var reader = cmd.ExecuteReader())
                 {
                     if (reader.Read())
-                        return MapEntry(reader);
+                    {
+                        var entry = MapEntry(reader);
+                        var totals = GetBudgetTotalsSnapshot(ulbCode, entry.AcSubhead, entry.FinYear, conn);
+
+                        entry.BudgetAmount = totals.TotalBudget;
+                        if (string.Equals(entry.Status, "y", StringComparison.OrdinalIgnoreCase) && entry.FinalProposedWorkAmount > 0)
+                        {
+                            // For final entry print/report: "remaining before final" based on actual provision.
+                            entry.RemainingBudgetAmount = totals.TotalBudget - totals.CommittedPrimary + entry.ProposedWorkAmount;
+                        }
+                        else
+                        {
+                            // For primary entry print/report: "remaining after primary" based on actual provision.
+                            entry.RemainingBudgetAmount = totals.TotalBudget - totals.CommittedPrimary;
+                        }
+
+                        return entry;
+                    }
                 }
             }
             return null;
@@ -451,7 +449,6 @@ namespace SmkcApi.Repositories.BudgetBook
                         string finYear = null;
                         string acSubhead = null;
                         decimal primaryAmount = 0m;
-                        decimal totalBudget = 0m;
 
                         // Lock the row and read it
                         using (var cmd = new OracleCommand(lockSql, conn))
@@ -493,9 +490,10 @@ namespace SmkcApi.Repositories.BudgetBook
                                 finYear = reader["FIN_YEAR"] as string;
                                 acSubhead = reader["AC_SUBHEAD"] as string;
                                 primaryAmount = reader["PROPOSEDWORK_AMOUNT"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["PROPOSEDWORK_AMOUNT"]);
-                                totalBudget = reader["BUDGET_AMOUNT"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["BUDGET_AMOUNT"]);
                             }
                         }
+
+                        decimal totalBudget = GetTotalBudget(ulbCode, acSubhead, finYear, conn, tx);
 
                         // Calculate remaining: totalBudget - ALL committed + this primary - this final
                         decimal allCommitted = 0m;
@@ -577,6 +575,205 @@ namespace SmkcApi.Repositories.BudgetBook
             }
         }
 
+        // ── Revise final entry amount (in-place) ───────────────────────────────
+
+        public BudgetBookSaveResult ReviseFinalEntry(int ulbCode, FinalBudgetRevisionRequest request)
+        {
+            const string lockSql = @"
+                SELECT BOOKENTRYNO, FIN_YEAR, AC_SUBHEAD, PROPOSEDWORK_AMOUNT,
+                       FINAL_PROPOSEDWORK_AMOUNT, FINALBOOKENTRYNO,
+                       STATUS, CANCELLED
+                FROM ABASBUDGETBOOKENTRY
+                WHERE ULB_CODE = :ulb_code AND BOOKENTRYNO = :book_entry_no
+                FOR UPDATE";
+
+            const string committedSql = @"
+                SELECT NVL(SUM(PROPOSEDWORK_AMOUNT), 0) AS COMMITTED
+                FROM ABASBUDGETBOOKENTRY
+                WHERE ULB_CODE = :ulb_code AND AC_SUBHEAD = :ac_subhead
+                  AND FIN_YEAR = :fin_year
+                  AND (CANCELLED IS NULL OR UPPER(CANCELLED) <> 'Y')";
+
+            const string updateSql = @"
+                UPDATE ABASBUDGETBOOKENTRY
+                SET    FINAL_PROPOSEDWORK_AMOUNT = :final_amount,
+                       FINALBUDGETENTBY          = :entered_by,
+                       FINALBUDGETENTRYDATE      = :final_entry_date,
+                       STATUS                    = 'y'
+                WHERE  ULB_CODE    = :ulb_code
+                  AND  BOOKENTRYNO = :book_entry_no";
+
+            const string auditSql = @"
+                INSERT INTO ABASBUDGETBOOK_REV_AUDIT
+                    (AUDIT_ID, ULB_CODE, BOOKENTRYNO, FINALBOOKENTRYNO,
+                     FIN_YEAR, AC_SUBHEAD, OLD_FINAL_AMOUNT, NEW_FINAL_AMOUNT,
+                     DELTA_AMOUNT, REVISION_REMARK, REVISED_BY, REVISED_AT)
+                VALUES
+                    (SEQABASBUDGETBOOK_REV_AUDIT.NEXTVAL, :ulb_code, :book_entry_no, :final_book_entry_no,
+                     :fin_year, :ac_subhead, :old_final_amount, :new_final_amount,
+                     :delta_amount, :revision_remark, :revised_by, :revised_at)";
+
+            using (var conn = _connectionFactory.CreateAbas())
+            {
+                conn.Open();
+                using (var tx = conn.BeginTransaction())
+                {
+                    try
+                    {
+                        string finYear = null;
+                        string acSubhead = null;
+                        decimal primaryAmount = 0m;
+                        decimal previousFinalAmount = 0m;
+                        long finalBookEntryNo = 0;
+
+                        using (var cmd = new OracleCommand(lockSql, conn))
+                        {
+                            cmd.Transaction = tx;
+                            cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                            cmd.Parameters.Add("book_entry_no", OracleDbType.Decimal).Value = request.BookEntryNo;
+                            using (var reader = cmd.ExecuteReader())
+                            {
+                                if (!reader.Read())
+                                {
+                                    tx.Rollback();
+                                    return new BudgetBookSaveResult
+                                    {
+                                        Success = false,
+                                        Message = "नोंद सापडली नाही (BookEntryNo: " + request.BookEntryNo + ").",
+                                    };
+                                }
+
+                                var status = reader["STATUS"] as string ?? string.Empty;
+                                var cancelled = reader["CANCELLED"] as string ?? string.Empty;
+
+                                if (!status.Equals("y", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tx.Rollback();
+                                    return new BudgetBookSaveResult
+                                    {
+                                        Success = false,
+                                        Message = "फक्त अंतिम नोंद झालेल्या नोंदीतच बदल करता येतो.",
+                                    };
+                                }
+
+                                if (cancelled.Equals("y", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tx.Rollback();
+                                    return new BudgetBookSaveResult
+                                    {
+                                        Success = false,
+                                        Message = "ही नोंद रद्द केलेली आहे.",
+                                    };
+                                }
+
+                                finalBookEntryNo = reader["FINALBOOKENTRYNO"] == DBNull.Value ? 0L : Convert.ToInt64(reader["FINALBOOKENTRYNO"]);
+                                if (finalBookEntryNo <= 0)
+                                {
+                                    tx.Rollback();
+                                    return new BudgetBookSaveResult
+                                    {
+                                        Success = false,
+                                        Message = "अंतिम नोंद क्रमांक उपलब्ध नाही. सुधारणा करता येत नाही.",
+                                    };
+                                }
+
+                                finYear = reader["FIN_YEAR"] as string;
+                                acSubhead = reader["AC_SUBHEAD"] as string;
+                                primaryAmount = reader["PROPOSEDWORK_AMOUNT"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["PROPOSEDWORK_AMOUNT"]);
+                                previousFinalAmount = reader["FINAL_PROPOSEDWORK_AMOUNT"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["FINAL_PROPOSEDWORK_AMOUNT"]);
+                            }
+                        }
+
+                        decimal totalBudget = GetTotalBudget(ulbCode, acSubhead, finYear, conn, tx);
+
+                        decimal allCommitted = 0m;
+                        using (var cmd = new OracleCommand(committedSql, conn))
+                        {
+                            cmd.Transaction = tx;
+                            cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                            cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                            cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+                            var val = cmd.ExecuteScalar();
+                            if (val != null && val != DBNull.Value)
+                                allCommitted = Convert.ToDecimal(val);
+                        }
+
+                        decimal currentRemainingAfterPrimary = totalBudget - allCommitted;
+                        decimal previousRemaining = currentRemainingAfterPrimary + primaryAmount - previousFinalAmount;
+                        decimal revisedRemaining = currentRemainingAfterPrimary + primaryAmount - request.RevisedFinalAmount;
+
+                        if (revisedRemaining < 0)
+                        {
+                            tx.Rollback();
+                            return new BudgetBookSaveResult
+                            {
+                                Success = false,
+                                Message = string.Format(
+                                    "अपुरा तरतूद: सुधारित अंतिम किंमत ₹{0:N0} साठी तरतूद शिल्लक नाही. कमाल अनुज्ञेय रक्कम: ₹{1:N0}.",
+                                    request.RevisedFinalAmount,
+                                    currentRemainingAfterPrimary + primaryAmount),
+                                RemainingBudget = currentRemainingAfterPrimary + primaryAmount,
+                                PreviousRemainingBudget = previousRemaining,
+                                PreviousFinalAmount = previousFinalAmount,
+                                RevisedFinalAmount = request.RevisedFinalAmount,
+                            };
+                        }
+
+                        using (var cmd = new OracleCommand(updateSql, conn))
+                        {
+                            cmd.Transaction = tx;
+                            cmd.Parameters.Add("final_amount", OracleDbType.Decimal).Value = request.RevisedFinalAmount;
+                            cmd.Parameters.Add("entered_by", OracleDbType.Varchar2).Value = TruncateString(request.EnteredBy, 8);
+                            cmd.Parameters.Add("final_entry_date", OracleDbType.Date).Value = DateTime.Now;
+                            cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                            cmd.Parameters.Add("book_entry_no", OracleDbType.Decimal).Value = request.BookEntryNo;
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        using (var cmd = new OracleCommand(auditSql, conn))
+                        {
+                            cmd.Transaction = tx;
+                            cmd.BindByName = true;
+                            cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                            cmd.Parameters.Add("book_entry_no", OracleDbType.Decimal).Value = request.BookEntryNo;
+                            cmd.Parameters.Add("final_book_entry_no", OracleDbType.Decimal).Value = finalBookEntryNo;
+                            cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+                            cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                            cmd.Parameters.Add("old_final_amount", OracleDbType.Decimal).Value = previousFinalAmount;
+                            cmd.Parameters.Add("new_final_amount", OracleDbType.Decimal).Value = request.RevisedFinalAmount;
+                            cmd.Parameters.Add("delta_amount", OracleDbType.Decimal).Value = request.RevisedFinalAmount - previousFinalAmount;
+                            cmd.Parameters.Add("revision_remark", OracleDbType.NVarchar2).Value = TruncateString(request.RevisionRemark, 1000);
+                            cmd.Parameters.Add("revised_by", OracleDbType.Varchar2).Value = TruncateString(request.EnteredBy, 8);
+                            cmd.Parameters.Add("revised_at", OracleDbType.Date).Value = DateTime.Now;
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        tx.Commit();
+                        return new BudgetBookSaveResult
+                        {
+                            Success = true,
+                            Message = "अंतिम नोंद सुधारणा यशस्वीरित्या जतन झाली.",
+                            BookEntryNo = request.BookEntryNo,
+                            FinalBookEntryNo = finalBookEntryNo,
+                            RemainingBudget = revisedRemaining,
+                            PreviousRemainingBudget = previousRemaining,
+                            PreviousFinalAmount = previousFinalAmount,
+                            RevisedFinalAmount = request.RevisedFinalAmount,
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        tx.Rollback();
+                        return new BudgetBookSaveResult
+                        {
+                            Success = false,
+                            Message = "त्रुटी: " + ex.Message,
+                        };
+                    }
+                }
+            }
+        }
+
         // ── List entries ─────────────────────────────────────────────────────────
 
         public IEnumerable<BudgetBookEntryDto> ListEntries(int ulbCode, string finYear, int? deptCode, int pageNo, int pageSize, out int totalCount, string search = null, string status = null)
@@ -617,7 +814,11 @@ namespace SmkcApi.Repositories.BudgetBook
                        b.STATUS, b.CANCELLED, b.DEPT_CODE, b.WORK_NAME, b.NASTINO, b.FILETYPE,
                        d.DEPT_NAME,
                        s.AC_SUBHEADNAMELL_UNICODE,
-                       s.AC_SUBHEADNAMELL
+                       s.AC_SUBHEADNAMELL,
+                       r.OLD_FINAL_AMOUNT AS PREVIOUS_FINAL_AMOUNT,
+                       r.NEW_FINAL_AMOUNT AS REVISED_FINAL_AMOUNT,
+                       r.REVISION_REMARK,
+                       r.REVISED_AT AS REVISION_DATE
                 FROM ABASBUDGETBOOKENTRY b
                 LEFT JOIN ULBERP.DEPARTMENTDET d
                        ON d.DEPT_CODE = b.DEPT_CODE AND d.ULB_CODE = b.ULB_CODE
@@ -628,6 +829,17 @@ namespace SmkcApi.Repositories.BudgetBook
                        FROM ABASSUBHEADDET
                        GROUP BY AC_SUBHEAD, ULB_CODE
                 ) s ON s.AC_SUBHEAD = b.AC_SUBHEAD AND s.ULB_CODE = b.ULB_CODE
+                LEFT JOIN (
+                       SELECT ULB_CODE, BOOKENTRYNO, FINALBOOKENTRYNO, OLD_FINAL_AMOUNT, NEW_FINAL_AMOUNT,
+                              REVISION_REMARK, REVISED_AT,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY ULB_CODE, BOOKENTRYNO
+                                  ORDER BY REVISED_AT DESC, AUDIT_ID DESC
+                              ) AS RN
+                       FROM ABASBUDGETBOOK_REV_AUDIT
+                ) r ON r.ULB_CODE = b.ULB_CODE
+                   AND r.BOOKENTRYNO = b.BOOKENTRYNO
+                   AND r.RN = 1
                 WHERE b.ULB_CODE = :ulb_code
                   AND b.FIN_YEAR = :fin_year
                   AND (b.CANCELLED IS NULL OR UPPER(b.CANCELLED) <> 'Y')
@@ -1278,6 +1490,77 @@ namespace SmkcApi.Repositories.BudgetBook
             public string FundName { get; set; }
         }
 
+        private sealed class BudgetTotalsSnapshot
+        {
+            public decimal TotalBudget { get; set; }
+            public decimal CommittedPrimary { get; set; }
+        }
+
+        private BudgetTotalsSnapshot GetBudgetTotalsSnapshot(int ulbCode, string acSubhead, string finYear, OracleConnection conn)
+        {
+            const string sql = @"
+                SELECT
+                    NVL((
+                        SELECT SUM(NVL(d.DEBIT_AMOUNT, 0) + NVL(d.CREDIT_AMOUNT, 0))
+                        FROM ABASDEPTBUDJETACTDET d
+                        WHERE d.ULB_CODE = :ulb_code
+                          AND d.AC_SUBHEAD = :ac_subhead
+                          AND d.FIN_YEAR = :fin_year
+                    ), 0) AS TOTAL_BUDGET,
+                    NVL((
+                        SELECT SUM(NVL(b.PROPOSEDWORK_AMOUNT, 0))
+                        FROM ABASBUDGETBOOKENTRY b
+                        WHERE b.ULB_CODE = :ulb_code
+                          AND b.AC_SUBHEAD = :ac_subhead
+                          AND b.FIN_YEAR = :fin_year
+                          AND (b.CANCELLED IS NULL OR UPPER(b.CANCELLED) <> 'Y')
+                    ), 0) AS COMMITTED_PRIMARY
+                FROM DUAL";
+
+            using (var cmd = new OracleCommand(sql, conn))
+            {
+                cmd.BindByName = true;
+                cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        return new BudgetTotalsSnapshot
+                        {
+                            TotalBudget = reader["TOTAL_BUDGET"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["TOTAL_BUDGET"]),
+                            CommittedPrimary = reader["COMMITTED_PRIMARY"] == DBNull.Value ? 0m : Convert.ToDecimal(reader["COMMITTED_PRIMARY"]),
+                        };
+                    }
+                }
+            }
+
+            return new BudgetTotalsSnapshot();
+        }
+
+        private decimal GetTotalBudget(int ulbCode, string acSubhead, string finYear, OracleConnection conn, OracleTransaction tx)
+        {
+            const string sql = @"
+                SELECT NVL(SUM(NVL(DEBIT_AMOUNT, 0) + NVL(CREDIT_AMOUNT, 0)), 0)
+                FROM ABASDEPTBUDJETACTDET
+                WHERE ULB_CODE = :ulb_code
+                  AND AC_SUBHEAD = :ac_subhead
+                  AND FIN_YEAR = :fin_year";
+
+            using (var cmd = new OracleCommand(sql, conn))
+            {
+                cmd.Transaction = tx;
+                cmd.BindByName = true;
+                cmd.Parameters.Add("ulb_code", OracleDbType.Decimal).Value = ulbCode;
+                cmd.Parameters.Add("ac_subhead", OracleDbType.Varchar2).Value = acSubhead;
+                cmd.Parameters.Add("fin_year", OracleDbType.Varchar2).Value = finYear;
+                var val = cmd.ExecuteScalar();
+                return val == null || val == DBNull.Value ? 0m : Convert.ToDecimal(val);
+            }
+        }
+
         // ── Helpers ──────────────────────────────────────────────────────────────
 
         private static BudgetBookEntryDto MapEntry(IDataReader reader)
@@ -1305,6 +1588,10 @@ namespace SmkcApi.Repositories.BudgetBook
                 WorkName = reader["WORK_NAME"] as string ?? string.Empty,
                 NastiNo = reader["NASTINO"] == DBNull.Value ? 0L : Convert.ToInt64(reader["NASTINO"]),
                 FileType = reader["FILETYPE"] as string ?? string.Empty,
+                PreviousFinalAmount = reader["PREVIOUS_FINAL_AMOUNT"] == DBNull.Value ? (decimal?)null : Convert.ToDecimal(reader["PREVIOUS_FINAL_AMOUNT"]),
+                RevisedFinalAmount = reader["REVISED_FINAL_AMOUNT"] == DBNull.Value ? (decimal?)null : Convert.ToDecimal(reader["REVISED_FINAL_AMOUNT"]),
+                RevisionRemark = reader["REVISION_REMARK"] as string ?? string.Empty,
+                RevisionDate = reader["REVISION_DATE"] == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(reader["REVISION_DATE"]),
             };
         }
 

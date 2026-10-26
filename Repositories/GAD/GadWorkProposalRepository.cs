@@ -4,12 +4,19 @@ using System.Data;
 using Oracle.ManagedDataAccess.Client;
 using SmkcApi.Models.BudgetBook;
 using SmkcApi.Models.GAD;
+using SmkcApi.Utils;
 
 namespace SmkcApi.Repositories.GAD
 {
     public class GadWorkProposalRepository : IGadWorkProposalRepository
     {
         private readonly IOracleConnectionFactory _connectionFactory;
+
+        private static string NormalizeDepartmentName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return NetIsmConverter.ConvertIfNeeded(value.Trim());
+        }
 
         public GadWorkProposalRepository(IOracleConnectionFactory connectionFactory)
         {
@@ -58,9 +65,9 @@ namespace SmkcApi.Repositories.GAD
                             result.Add(new DepartmentDto
                             {
                                 DeptCode = Convert.ToInt32(reader["DEPT_CODE"]),
-                                DeptName = reader["DEPT_NAME"] as string ?? string.Empty,
-                                DeptNameLL = reader["DEPT_NAMELL"] as string ?? string.Empty,
-                                DeptNameLLUnicode = reader["DEPT_NAMELL_UNICODE"] as string ?? string.Empty,
+                                DeptName = NormalizeDepartmentName(reader["DEPT_NAME"] as string ?? string.Empty),
+                                DeptNameLL = NormalizeDepartmentName(reader["DEPT_NAMELL"] as string ?? string.Empty),
+                                DeptNameLLUnicode = NormalizeDepartmentName(reader["DEPT_NAMELL_UNICODE"] as string ?? string.Empty),
                             });
                         }
                     }
@@ -777,7 +784,7 @@ namespace SmkcApi.Repositories.GAD
                                 ProposalType = r["PROPOSAL_TYPE"] as string ?? string.Empty,
                                 FinYear      = r["FINYEAR"] as string ?? string.Empty,
                                 DeptCode     = Convert.ToInt32(r["DEPT_CODE"]),
-                                DeptName     = r["DEPT_NAME"] as string ?? string.Empty,
+                                DeptName     = NormalizeDepartmentName(r["DEPT_NAME"] as string ?? string.Empty),
                                 NastiNo      = r["NASTI_NO"] as string ?? string.Empty,
                                 WorkName     = r["WORK_NAME"] as string ?? string.Empty,
                                 AcSubhead    = r["ACHEAD_CODE"] as string ?? string.Empty,
@@ -825,8 +832,13 @@ namespace SmkcApi.Repositories.GAD
                        t.APPROVALBYTOWNPLAN AS TOWN_PLAN_APPROVAL,
                        t.EXPENSEVALID AS EXP_VALID,
                        t.STOCKLISTATTACHED AS STOCK_LIST, t.PICATTACHED AS PIC_ATTACHED,
-                       t.ACHEAD_CODE,
-                       t.PROPOSEDCOST, t.AVAILABLEBUDGET AS BUDGET_AMT,
+                                             t.ACHEAD_CODE,
+                                             t.PROPOSEDCOST,
+                                             NVL((SELECT SUM(NVL(b.DEBIT_AMOUNT, 0) + NVL(b.CREDIT_AMOUNT, 0))
+                                                            FROM ABAS.ABASDEPTBUDJETACTDET b
+                                                         WHERE b.AC_SUBHEAD = t.ACHEAD_CODE
+                                                             AND b.FIN_YEAR   = t.FINYEAR
+                                                             AND (b.DEPT_CODE = t.DEPT_CODE OR b.DEPT_CODE = 0)), 0) AS BUDGET_AMT,
                        t.BUDGETFORWORK AS VALID_AC_HEAD,
                        t.PRRPOSALFROMOTHERDEPT AS OTHER_DEPT,
                        t.WORKSPLITTED AS WORK_SPLIT,

@@ -250,7 +250,7 @@ namespace SmkcApi.Services
                         }
                         catch (Exception ex)
                         {
-                            return new SmsSendResult
+                            var result= new SmsSendResult
                             {
                                 ConnectionNumber = connectionMap.ContainsKey(batch.First()) ? connectionMap[batch.First()] : null,
                                 MobileNumber = string.Join(",", batch),
@@ -258,6 +258,7 @@ namespace SmkcApi.Services
                                 ProviderResponse = null,
                                 Error = ex.Message
                             };
+                            return result;
                         }
                     }));
                 }

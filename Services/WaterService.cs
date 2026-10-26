@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using SmkcApi.Models;
 using SmkcApi.Repositories;
@@ -9,6 +10,7 @@ namespace SmkcApi.Services
     {
         Task<BillFetchResponse> FetchBillAsync(BillFetchRequest req);
         Task<CollectionPostResult> PostCollectionAsync(CollectionPostRequest req, string idempotencyKey);
+        Task<WaterCollectionSuccessResponse> AuthorizeCollectionAsync(WaterCollectionSuccessRequest req);
     }
 
     public class WaterService : IWaterService
@@ -28,6 +30,40 @@ namespace SmkcApi.Services
                 return null;
 
             // Map DB-shaped dto to API contract
+            var arrears = proc.ArrearsBalance;
+            if (arrears <= 0m)
+            {
+                var derivedArrears = proc.TotalBalance - proc.CurrentBillAmount - proc.CurrentInterestBalance;
+                if (derivedArrears > 0m)
+                    arrears = derivedArrears;
+            }
+
+            var currentBill = proc.CurrentBillAmount > 0m ? proc.CurrentBillAmount : proc.CurrentBalance;
+            var rawLateFee = proc.CurrentInterestBalance > 0m ? proc.CurrentInterestBalance : proc.InterestBalance;
+            var effectiveLateFee = rawLateFee;
+
+            // Business rule: do not include late fee if due date has not been exceeded.
+            DateTime dueDate;
+            if (!string.IsNullOrWhiteSpace(proc.LastBillDueDate) &&
+                DateTime.TryParseExact(
+                    proc.LastBillDueDate,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out dueDate))
+            {
+                if (DateTime.Today <= dueDate.Date)
+                {
+                    effectiveLateFee = 0m;
+                }
+            }
+
+            var totalDue = arrears + currentBill + effectiveLateFee;
+            if (totalDue <= 0m)
+            {
+                totalDue = proc.TotalBalance;
+            }
+
             var resp = new BillFetchResponse
             {
                 // IDs & names
@@ -40,10 +76,10 @@ namespace SmkcApi.Services
                 Mobile = null,                          // not provided by proc currently
 
                 // Amounts
-                Arrears = 0m,                           // not available separately in proc
-                Current = proc.TotalBalance,
-                LateFee = proc.InterestBalance,
-                TotalDue = proc.TotalBalance,
+                Arrears = arrears,
+                Current = currentBill,
+                LateFee = effectiveLateFee,
+                TotalDue = totalDue,
 
                 // Dates
                 AsOfDate = !string.IsNullOrWhiteSpace(proc.QueryDateTime)
@@ -71,6 +107,11 @@ namespace SmkcApi.Services
 
             var receipt = await _repo.PostCollectionAsync(req, idempotencyKey);
             return new CollectionPostResult { Status = CollectionPostStatus.Success, Payload = receipt };
+        }
+
+        public Task<WaterCollectionSuccessResponse> AuthorizeCollectionAsync(WaterCollectionSuccessRequest req)
+        {
+            return _repo.AuthorizeCollectionAsync(req);
         }
     }
 }

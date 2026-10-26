@@ -14,6 +14,7 @@ namespace SmkcApi.Repositories
         Task<BalanceDto> GetBalanceAsync(string consumerNo, string from, string to);
         Task<CollectionPostResponse> GetReceiptByBankTxnAsync(string bankTxnId);
         Task<CollectionPostResponse> PostCollectionAsync(CollectionPostRequest req, string idemKey);
+        Task<WaterCollectionSuccessResponse> AuthorizeCollectionAsync(WaterCollectionSuccessRequest req);
         Task<ProcBillDto> GetBillViaProcAsync(string consumerNo);
         Task<List<ConnectionBalanceMobileDto>> GetConnectionBalanceWithMobileAsync(
            long connectionNo = 0, string wardCode = "0", string divCode = "0");
@@ -41,7 +42,7 @@ namespace SmkcApi.Repositories
         {
             var results = new List<ConnectionBalanceMobileDto>();
 
-            using (var conn = _factory.Create())
+            using (var conn = _factory.CreateWS())
             using (var cmd = conn.CreateCommand())
             {
                 cmd.BindByName = true;
@@ -246,6 +247,74 @@ namespace SmkcApi.Repositories
             }
         }
 
+        public async Task<WaterCollectionSuccessResponse> AuthorizeCollectionAsync(WaterCollectionSuccessRequest req)
+        {
+            using (var conn = _factory.CreateWS())
+            {
+                await conn.OpenAsync();
+                using (var tx = conn.BeginTransaction())
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.BindByName = true;
+                    cmd.CommandText = "online_collauth_website";
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd.Transaction = tx;
+
+                    cmd.Parameters.Add("xws_connno", OracleDbType.Int64).Value = req.ConnectionNo;
+                    cmd.Parameters.Add("xtotalpaid", OracleDbType.Decimal).Value = req.TotalPaid;
+                    cmd.Parameters.Add("xws_bookno", OracleDbType.Int64).Value = req.BookNo;
+                    cmd.Parameters.Add("xws_srno", OracleDbType.Int64).Value = req.SrNo;
+                    cmd.Parameters.Add("xws_receiptno", OracleDbType.Int64).Value = req.ReceiptNo;
+                    cmd.Parameters.Add("transaction_no", OracleDbType.Int64).Value = req.TransactionNo;
+                    cmd.Parameters.Add("fauthby", OracleDbType.Varchar2).Value = "WEBUSER2";
+
+                    var resultParam = new OracleParameter("strResult", OracleDbType.Varchar2, 200)
+                    {
+                        Direction = System.Data.ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(resultParam);
+
+                    try
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                        tx.Commit();
+                    }
+                    catch
+                    {
+                        tx.Rollback();
+                        throw;
+                    }
+
+                    var resultText = resultParam.Value == null || resultParam.Value == DBNull.Value
+                        ? string.Empty
+                        : resultParam.Value.ToString();
+                    var normalizedResult = string.IsNullOrWhiteSpace(resultText) ? string.Empty : resultText.Trim();
+                    if (string.Equals(normalizedResult, "null", StringComparison.OrdinalIgnoreCase))
+                    {
+                        normalizedResult = string.Empty;
+                    }
+
+                    var isSuccess = string.IsNullOrWhiteSpace(normalizedResult);
+                    var message = isSuccess
+                        ? "Done"
+                        : ("Collection authorization rejected by online_collauth_website. strResult: " + normalizedResult);
+
+                    System.Diagnostics.Trace.TraceInformation(
+                        "[WaterRepository] Water collection authorization status: " + message +
+                        ", RawStrResult: " + (string.IsNullOrWhiteSpace(resultText) ? "(empty)" : resultText) +
+                        " (ConnNo: " + req.ConnectionNo + ", TxnNo: " + req.TransactionNo + ")");
+
+                    return new WaterCollectionSuccessResponse
+                    {
+                        Authorized = isSuccess,
+                        Message = message,
+                        ConnectionNo = req.ConnectionNo,
+                        TransactionNo = req.TransactionNo
+                    };
+                }
+            }
+        }
+
         private string GenerateReceipt(OracleConnection conn)
         {
             using (var cmd = new OracleCommand("SELECT 'WT-' || TO_CHAR(SYSDATE,'YYYY') || '-' || LPAD(WATER_RCPT_SEQ.NEXTVAL,6,'0') FROM DUAL", conn))
@@ -267,7 +336,7 @@ namespace SmkcApi.Repositories
             if (!long.TryParse(consumerNo, out connNumber))
                 throw new ArgumentException("Invalid connection number");
 
-            using (var conn = _factory.Create())
+            using (var conn = _factory.CreateWS())
             using (var cmd = conn.CreateCommand())
             {
                 cmd.BindByName = true;
@@ -329,6 +398,9 @@ namespace SmkcApi.Repositories
                         MeterRentBalance = D("MeterRentBalance"),
                         TotalBalance = D("TotalBalance"),
                         InterestBalance = D("InterestBalance"),
+                        ArrearsBalance = D("ArrearsBalance"),
+                        CurrentBillAmount = D("CurrentBillAmount"),
+                        CurrentInterestBalance = D("CurrentInterestBalance"),
                         LastPaymentAmount = D("LastPaymentAmount"),
 
                         LastBillDueDate = Dt("LastBillDueDate"),
@@ -377,7 +449,7 @@ namespace SmkcApi.Repositories
                     cmd.Parameters.Add("p_response_code", OracleDbType.Varchar2, responseCode, System.Data.ParameterDirection.Input);
                     cmd.Parameters.Add("p_response_message", OracleDbType.Varchar2, responseMessage, System.Data.ParameterDirection.Input);
                     cmd.Parameters.Add("p_provider_response", OracleDbType.Clob, providerResponse, System.Data.ParameterDirection.Input);
-                    cmd.Parameters.Add("p_sent_by", OracleDbType.Varchar2, "API", System.Data.ParameterDirection.Input);
+                    cmd.Parameters.Add("p_sent_by", OracleDbType.Varchar2, "API_231026_2627_15", System.Data.ParameterDirection.Input);
 
                     await conn.OpenAsync();
                     await cmd.ExecuteNonQueryAsync();
@@ -407,7 +479,7 @@ namespace SmkcApi.Repositories
 
                 cmd.Parameters.Add("p_result", OracleDbType.RefCursor, System.Data.ParameterDirection.Output);
                 cmd.Parameters.Add("p_current_finyr", OracleDbType.Varchar2).Value = "2026-2027"; // updated for FY 2026-2027; no current billing cycle yet
-                cmd.Parameters.Add("p_current_bc_code", OracleDbType.Varchar2).Value = "0";  // 0 = no current BC (no bills generated for 2026-2027)
+                cmd.Parameters.Add("p_current_bc_code", OracleDbType.Varchar2).Value = "15";  // 0 = no current BC (no bills generated for 2026-2027)
                 cmd.Parameters.Add("p_payment_url", OracleDbType.Varchar2).Value = "https://tinyurl.com/ye89wuk3";
                 cmd.Parameters.Add("p_ws_connno", OracleDbType.Int64).Value = connectionNo;
                 cmd.Parameters.Add("p_ward_code", OracleDbType.Varchar2).Value = wardCode;
@@ -511,6 +583,9 @@ namespace SmkcApi.Repositories
         public decimal MeterRentBalance { get; set; }
         public decimal TotalBalance { get; set; }
         public decimal InterestBalance { get; set; }
+        public decimal ArrearsBalance { get; set; }
+        public decimal CurrentBillAmount { get; set; }
+        public decimal CurrentInterestBalance { get; set; }
         public decimal LastPaymentAmount { get; set; }
 
         public string LastBillDueDate { get; set; }

@@ -98,9 +98,15 @@ namespace SmkcApi.Controllers
         [HttpDelete]
         [Route("register/{identifier}")]
         [AllowAnonymous]
-        public IHttpActionResult DeleteRegistration(string identifier)
+        public IHttpActionResult DeleteRegistration(string identifier, [FromBody] WcwcStatusUpdateRequest request)
         {
-            var result = _service.Cancel(identifier, new WcwcStatusUpdateRequest { Remarks = "Cancelled from API delete endpoint" });
+            var safeRequest = request ?? new WcwcStatusUpdateRequest();
+            if (string.IsNullOrWhiteSpace(safeRequest.Remarks))
+            {
+                safeRequest.Remarks = "Department delete action without explicit reason";
+            }
+
+            var result = _service.DeleteRegistration(identifier, safeRequest);
             return CreateResponse(result);
         }
 
@@ -337,81 +343,94 @@ namespace SmkcApi.Controllers
 
         private static void MapFormField(WcwcRegistrationUpsertRequest request, string name, string value)
         {
-            switch (name)
+            var key = (name ?? string.Empty).Trim();
+            var normalized = key.ToLowerInvariant();
+
+            switch (normalized)
             {
                 case "surname": request.Surname = value; break;
-                case "firstName": request.FirstName = value; break;
-                case "fatherName": request.FatherName = value; break;
-                case "motherName": request.MotherName = value; break;
+                case "firstname": request.FirstName = value; break;
+                case "fathername": request.FatherName = value; break;
+                case "mothername": request.MotherName = value; break;
                 case "education": request.Education = value; break;
-                case "aadhaarNumber": request.AadhaarNumber = value; break;
-                case "rationCardNumber": request.RationCardNumber = value; break;
-                case "rationCardColor": request.RationCardColor = value; break;
+                case "aadhaarnumber": request.AadhaarNumber = value; break;
+                case "rationcardnumber": request.RationCardNumber = value; break;
+                case "rationcardcolor":
+                case "rationcardtype":
+                case "rationtype":
+                    request.RationCardColor = value;
+                    break;
                 case "dob": request.Dob = value; break;
-                case "maritalStatus": request.MaritalStatus = value; break;
+                case "maritalstatus": request.MaritalStatus = value; break;
                 case "religion": request.Religion = value; break;
                 case "caste": request.Caste = value; break;
-                case "familyRelation": request.FamilyRelation = value; break;
-                case "fullAddress": request.FullAddress = value; break;
-                case "livesInCorporationArea": request.LivesInCorporationArea = value; break;
-                case "wardNumber": request.WardNumber = value; break;
-                case "prabhagSamiti": request.PrabhagSamiti = value; break;
+                case "familyrelation": request.FamilyRelation = value; break;
+                case "fulladdress": request.FullAddress = value; break;
+                case "livesincorporationarea": request.LivesInCorporationArea = value; break;
+                case "wardnumber": request.WardNumber = value; break;
+                case "prabhagsamiti": request.PrabhagSamiti = value; break;
                 case "uphc": request.Uphc = value; break;
                 case "pincode": request.Pincode = value; break;
                 case "constituency": request.Constituency = value; break;
-                case "mobileNumber": request.MobileNumber = value; break;
-                case "alternatePhone": request.AlternatePhone = value; break;
-                case "bankName": request.BankName = value; break;
-                case "branchName": request.BranchName = value; break;
-                case "accountNumber": request.AccountNumber = value; break;
-                case "ifscCode": request.IfscCode = value; break;
-                case "bplNumber": request.BplNumber = value; break;
-                case "bplYear": request.BplYear = value; break;
-                case "hasCertificate": request.HasCertificate = value; break;
-                case "certificateNumber": request.CertificateNumber = value; break;
-                case "certificateDate": request.CertificateDate = value; break;
-                case "certificateType": request.CertificateType = value; break;
-                case "disabilityPercentage": request.DisabilityPercentage = value; break;
-                case "hasUDID": request.HasUdid = value; break;
-                case "udidNumber": request.UdidNumber = value; break;
-                case "hasSTPass": request.HasStPass = value; break;
-                case "stPassNumber": request.StPassNumber = value; break;
-                case "hasRailwayPass": request.HasRailwayPass = value; break;
-                case "railwayPassNumber": request.RailwayPassNumber = value; break;
-                case "hasMSRTCPass": request.HasMsrtcPass = value; break;
-                case "msrtcPassNumber": request.MsrtcPassNumber = value; break;
-                case "isEmployed": request.IsEmployed = value; break;
-                case "employmentType": request.EmploymentType = value; break;
+                case "mobilenumber": request.MobileNumber = value; break;
+                case "alternatephone": request.AlternatePhone = value; break;
+                case "bankname": request.BankName = value; break;
+                case "branchname": request.BranchName = value; break;
+                case "accountnumber": request.AccountNumber = value; break;
+                case "ifsccode": request.IfscCode = value; break;
+                case "bplnumber": request.BplNumber = value; break;
+                case "bplyear": request.BplYear = value; break;
+                case "hascertificate": request.HasCertificate = value; break;
+                case "certificatenumber": request.CertificateNumber = value; break;
+                case "certificatedate": request.CertificateDate = value; break;
+                case "certificatetype": request.CertificateType = value; break;
+                case "disabilitypercentage": request.DisabilityPercentage = value; break;
+                case "hasudid": request.HasUdid = value; break;
+                case "udidnumber": request.UdidNumber = value; break;
+                case "hasstpass": request.HasStPass = value; break;
+                case "stpassnumber": request.StPassNumber = value; break;
+                case "hasrailwaypass": request.HasRailwayPass = value; break;
+                case "railwaypassnumber": request.RailwayPassNumber = value; break;
+                case "hasmsrtcpass": request.HasMsrtcPass = value; break;
+                case "msrtcpassnumber": request.MsrtcPassNumber = value; break;
+                case "isemployed": request.IsEmployed = value; break;
+                case "employmenttype": request.EmploymentType = value; break;
                 case "occupation": request.Occupation = value; break;
-                case "hasGovtBenefit": request.HasGovtBenefit = value; break;
-                case "govtBenefitScheme": request.GovtBenefitScheme = value; break;
-                case "hasMCBenefit": request.HasMcBenefit = value; break;
-                case "mcBenefitDetails": request.McBenefitDetails = value; break;
-                case "hasSGNPension": request.HasSgnPension = value; break;
-                case "hasOwnHouse": request.HasOwnHouse = value; break;
-                case "wantsHousingBenefit": request.WantsHousingBenefit = value; break;
-                case "hasOwnLand": request.HasOwnLand = value; break;
-                case "hasGuardianship": request.HasGuardianship = value; break;
-                case "guardianName": request.GuardianName = value; break;
-                case "guardianAddress": request.GuardianAddress = value; break;
-                case "guardianPhone": request.GuardianPhone = value; break;
-                case "needsAssistiveDevice": request.NeedsAssistiveDevice = value; break;
-                case "documentsSubmitted": request.DocumentsSubmitted = value; break;
-                case "applicantSignDate": request.ApplicantSignDate = value; break;
-                case "surveyorName": request.SurveyorName = value; break;
-                case "surveyorDesignation": request.SurveyorDesignation = value; break;
-                case "surveyorMobile": request.SurveyorMobile = value; break;
-                case "termsAccepted": request.TermsAccepted = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase); break;
-                case "applicationMode": request.ApplicationMode = value; break;
-                case "submissionChannel": request.SubmissionChannel = value; break;
-                case "publicSubmitterName": request.PublicSubmitterName = value; break;
-                case "publicSubmitterMobile": request.PublicSubmitterMobile = value; break;
-                case "publicCenterName": request.PublicCenterName = value; break;
-                case "manualApplicationNo": request.ManualApplicationNo = value; break;
-                case "createdBy": request.CreatedBy = value; break;
-                case "operatorUserId": request.OperatorUserId = ParseNullableInt(value); break;
-                case "disabilityTypes": request.DisabilitySelections = ParseStringArray(value); break;
-                case "assistiveDevices": request.AssistiveDeviceSelections = ParseStringArray(value); break;
+                case "hasgovtbenefit": request.HasGovtBenefit = value; break;
+                case "govtbenefitscheme": request.GovtBenefitScheme = value; break;
+                case "hasmcbenefit": request.HasMcBenefit = value; break;
+                case "mcbenefitdetails": request.McBenefitDetails = value; break;
+                case "hassgnpension": request.HasSgnPension = value; break;
+                case "hasownhouse": request.HasOwnHouse = value; break;
+                case "wantshousingbenefit": request.WantsHousingBenefit = value; break;
+                case "hasownland": request.HasOwnLand = value; break;
+                case "hasguardianship": request.HasGuardianship = value; break;
+                case "guardianname": request.GuardianName = value; break;
+                case "guardianaddress": request.GuardianAddress = value; break;
+                case "guardianphone": request.GuardianPhone = value; break;
+                case "needsassistivedevice": request.NeedsAssistiveDevice = value; break;
+                case "documentssubmitted": request.DocumentsSubmitted = value; break;
+                case "applicantsigndate": request.ApplicantSignDate = value; break;
+                case "surveyorname": request.SurveyorName = value; break;
+                case "surveyordesignation": request.SurveyorDesignation = value; break;
+                case "surveyormobile": request.SurveyorMobile = value; break;
+                case "termsaccepted": request.TermsAccepted = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase); break;
+                case "applicationmode": request.ApplicationMode = value; break;
+                case "submissionchannel": request.SubmissionChannel = value; break;
+                case "publicsubmittername": request.PublicSubmitterName = value; break;
+                case "publicsubmittermobile": request.PublicSubmitterMobile = value; break;
+                case "publiccentername": request.PublicCenterName = value; break;
+                case "manualapplicationno": request.ManualApplicationNo = value; break;
+                case "createdby": request.CreatedBy = value; break;
+                case "operatoruserid": request.OperatorUserId = ParseNullableInt(value); break;
+                case "disabilitytypes":
+                case "disabilityselections":
+                    request.DisabilitySelections = ParseStringArray(value);
+                    break;
+                case "assistivedevices":
+                case "assistivedeviceselections":
+                    request.AssistiveDeviceSelections = ParseStringArray(value);
+                    break;
             }
         }
 

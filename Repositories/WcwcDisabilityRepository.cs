@@ -18,6 +18,7 @@ namespace SmkcApi.Repositories
         WcwcOperationResult<object> GetApplicationStatus(string registrationNumber);
         WcwcOperationResult<object> SearchRegistrations(string searchText, string status, string applicationMode, int? operatorUserId);
         WcwcOperationResult<object> UpdateStatus(int registrationId, string status, int? operatorUserId, string remarks);
+        WcwcOperationResult<object> DeleteRegistration(int registrationId, int? operatorUserId, string remarks);
         WcwcOperationResult<object> OperatorLogin(string userName, string passwordHash);
         WcwcOperationResult<object> ResolveRegistration(string identifier);
         WcwcOperationResult<object> GetReport(string reportType, DateTime? fromDate, DateTime? toDate, string applicationMode);
@@ -350,6 +351,43 @@ namespace SmkcApi.Repositories
             }
         }
 
+        public WcwcOperationResult<object> DeleteRegistration(int registrationId, int? operatorUserId, string remarks)
+        {
+            try
+            {
+                using (var connection = _connectionFactory.Create())
+                using (var command = new OracleCommand(@"
+                    DELETE FROM TBL_WCWC_REGISTRATIONS
+                     WHERE REGISTRATION_ID = :P_REGISTRATION_ID", connection))
+                {
+                    connection.Open();
+                    command.BindByName = true;
+                    AddNullable(command, "P_REGISTRATION_ID", OracleDbType.Decimal, registrationId);
+
+                    var rows = command.ExecuteNonQuery();
+                    if (rows <= 0)
+                    {
+                        return new WcwcOperationResult<object>
+                        {
+                            Success = false,
+                            Message = "Registration not found for deletion",
+                            ErrorCode = "REGISTRATION_NOT_FOUND"
+                        };
+                    }
+
+                    return new WcwcOperationResult<object>
+                    {
+                        Success = true,
+                        Message = string.IsNullOrWhiteSpace(remarks) ? "Registration deleted successfully" : remarks.Trim()
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new WcwcOperationResult<object> { Success = false, Message = ex.Message, ErrorCode = "DELETE_EXCEPTION" };
+            }
+        }
+
         public WcwcOperationResult<object> OperatorLogin(string userName, string passwordHash)
         {
             try
@@ -386,13 +424,34 @@ namespace SmkcApi.Repositories
                 return new WcwcOperationResult<object> { Success = false, Message = "Registration identifier is required", ErrorCode = "IDENTIFIER_REQUIRED" };
             }
 
+            var normalizedIdentifier = identifier.Trim();
+
+            // Prefer registration-number lookup first to avoid misrouting when the identifier is numeric-like.
+            var byRegistrationNo = GetRegistration(null, normalizedIdentifier);
+            if (byRegistrationNo.Success && HasRegistrationRow(byRegistrationNo.Data))
+            {
+                return byRegistrationNo;
+            }
+
             int registrationId;
-            if (int.TryParse(identifier, out registrationId))
+            if (int.TryParse(normalizedIdentifier, out registrationId))
             {
                 return GetRegistration(registrationId, null);
             }
 
-            return GetRegistration(null, identifier);
+            return byRegistrationNo;
+        }
+
+        private static bool HasRegistrationRow(object data)
+        {
+            var bundle = data as Dictionary<string, object>;
+            if (bundle == null || !bundle.ContainsKey("registration"))
+            {
+                return false;
+            }
+
+            var rows = bundle["registration"] as List<Dictionary<string, object>>;
+            return rows != null && rows.Count > 0;
         }
 
         public WcwcOperationResult<object> GetApplicationStatus(string registrationNumber)

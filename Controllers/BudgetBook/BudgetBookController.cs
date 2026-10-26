@@ -157,6 +157,37 @@ namespace SmkcApi.Controllers.BudgetBook
             }
         }
 
+        // ── POST api/accounts/budget-book/final-revision ─────────────────────
+
+        [HttpPost]
+        [Route("final-revision")]
+        [AllowAnonymous]
+        public IHttpActionResult ReviseFinal([FromBody] FinalBudgetRevisionRequest request)
+        {
+            if (request == null)
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "Request body is required." });
+            if (request.BookEntryNo <= 0)
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "BookEntryNo is required." });
+            if (request.RevisedFinalAmount <= 0)
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "RevisedFinalAmount must be greater than zero." });
+            if (string.IsNullOrWhiteSpace(request.RevisionRemark))
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "RevisionRemark is required." });
+            if (string.IsNullOrWhiteSpace(request.EnteredBy))
+                return Content(HttpStatusCode.BadRequest, new { success = false, message = "EnteredBy is required." });
+
+            try
+            {
+                var result = _repo.ReviseFinalEntry(DEFAULT_ULB_CODE, request);
+                if (!result.Success)
+                    return Content((HttpStatusCode)422, result);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return Content(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
         // ── GET api/accounts/budget-book/list?finYear=2025-2026&deptCode=995&pageNo=1&pageSize=50
 
         [HttpGet]

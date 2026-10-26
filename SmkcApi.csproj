@@ -217,9 +217,13 @@
     <Compile Include="Utils\IsmMarathiConverter.cs" />
     <Compile Include="Utils\LegacyIndicConverter.cs" />
     <Compile Include="Models\BudgetBook\BudgetBookModels.cs" />
+    <Compile Include="Models\BMT\BillMappingTrackingModels.cs" />
     <Compile Include="Repositories\BudgetBook\IBudgetBookRepository.cs" />
     <Compile Include="Repositories\BudgetBook\BudgetBookRepository.cs" />
+    <Compile Include="Repositories\BMT\IBillMappingTrackingRepository.cs" />
+    <Compile Include="Repositories\BMT\BillMappingTrackingRepository.cs" />
     <Compile Include="Controllers\BudgetBook\BudgetBookController.cs" />
+    <Compile Include="Controllers\BMT\BillMappingTrackingController.cs" />
     <Compile Include="Models\GAD\GadWorkProposalModels.cs" />
     <Compile Include="Models\GAD\GadBudgetCapModels.cs" />
     <Compile Include="Repositories\GAD\IGadWorkProposalRepository.cs" />

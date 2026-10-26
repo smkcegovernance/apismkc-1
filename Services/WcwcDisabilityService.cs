@@ -21,6 +21,7 @@ namespace SmkcApi.Services
         WcwcApiResponse UpdateStatus(string identifier, WcwcStatusUpdateRequest request);
         Task<WcwcApiResponse> SendStatusSmsAsync(string identifier, WcwcStatusSmsRequest request);
         WcwcApiResponse Cancel(string identifier, WcwcStatusUpdateRequest request);
+        WcwcApiResponse DeleteRegistration(string identifier, WcwcStatusUpdateRequest request);
         WcwcApiResponse OperatorLogin(WcwcOperatorLoginRequest request);
         WcwcApiResponse UploadDocument(WcwcDocumentUploadRequest request);
         WcwcApiResponse DownloadDocument(string registrationNumber, string documentCode, string fileName);
@@ -76,12 +77,20 @@ namespace SmkcApi.Services
         private static readonly IDictionary<string, string> FieldToDocumentCode = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "udidDoc", "UDID_DOC" },
+            { "udiddocument", "UDID_DOC" },
             { "aadhaarDoc", "AADHAAR_DOC" },
+            { "aadhaardocument", "AADHAAR_DOC" },
             { "rationCardDoc", "RATION_CARD_DOC" },
+            { "rationcarddocument", "RATION_CARD_DOC" },
+            { "rationcardfile", "RATION_CARD_DOC" },
             { "bankDoc", "BANK_DOC" },
+            { "bankdocument", "BANK_DOC" },
             { "incomeCertificateDoc", "INCOME_CERTIFICATE_DOC" },
+            { "incomecertificatedocument", "INCOME_CERTIFICATE_DOC" },
             { "photoDoc", "PHOTO_DOC" },
+            { "photodocument", "PHOTO_DOC" },
             { "applicantSignature", "APPLICANT_SIGNATURE" },
+            { "applicantsign", "APPLICANT_SIGNATURE" },
             { "surveyorSignature", "SURVEYOR_SIGNATURE" }
         };
 
@@ -91,7 +100,6 @@ namespace SmkcApi.Services
             "AADHAAR_DOC",
             "RATION_CARD_DOC",
             "BANK_DOC",
-            "INCOME_CERTIFICATE_DOC",
             "PHOTO_DOC",
             "APPLICANT_SIGNATURE"
         };
@@ -277,6 +285,41 @@ namespace SmkcApi.Services
             return WcwcApiResponse.CreateSuccess(null, result.Message, Convert.ToString(row["REGISTRATION_NO"]));
         }
 
+        public WcwcApiResponse DeleteRegistration(string identifier, WcwcStatusUpdateRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return WcwcApiResponse.CreateError("Registration identifier is required", "IDENTIFIER_REQUIRED");
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Remarks))
+            {
+                return WcwcApiResponse.CreateError("Department delete reason is required", "DELETE_REASON_REQUIRED");
+            }
+
+            var resolved = ResolveIdentifier(identifier);
+            if (!resolved.Success)
+            {
+                return WcwcApiResponse.CreateError(resolved.Message, resolved.ErrorCode);
+            }
+
+            var row = GetFirstRow(resolved.Data);
+            if (row == null)
+            {
+                return WcwcApiResponse.CreateError("Registration not found", "REGISTRATION_NOT_FOUND");
+            }
+
+            var registrationId = Convert.ToInt32(row["REGISTRATION_ID"]);
+            var registrationNo = Convert.ToString(row["REGISTRATION_NO"]);
+            var result = _repository.DeleteRegistration(registrationId, request.OperatorUserId, request.Remarks);
+            if (!result.Success)
+            {
+                return WcwcApiResponse.CreateError(result.Message, result.ErrorCode);
+            }
+
+            return WcwcApiResponse.CreateSuccess(null, "Registration deleted successfully. Applicant may resubmit the form.", registrationNo);
+        }
+
         public WcwcApiResponse OperatorLogin(WcwcOperatorLoginRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.PasswordHash))
@@ -394,6 +437,7 @@ namespace SmkcApi.Services
             }
 
             var existingDocumentCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string existingRegistrationNumber = null;
             if (registrationId.HasValue)
             {
                 var currentRegistration = _repository.GetRegistration(registrationId, null);
@@ -403,6 +447,7 @@ namespace SmkcApi.Services
                 }
 
                 existingDocumentCodes = GetExistingDocumentCodes(currentRegistration.Data);
+                existingRegistrationNumber = ExtractRegistrationNumber(currentRegistration.Data);
             }
 
             var missingDocuments = GetMissingRequiredDocuments(request.Files, existingDocumentCodes);
@@ -436,10 +481,24 @@ namespace SmkcApi.Services
 
             foreach (var file in request.Files.Where(ShouldPersistDocument))
             {
-                var documentCode = FieldToDocumentCode[file.FieldName];
+                var documentCode = ResolveDocumentCode(file.FieldName);
+                if (string.IsNullOrWhiteSpace(documentCode))
+                {
+                    continue;
+                }
+
+                var storageRegistrationNumber = !string.IsNullOrWhiteSpace(saveResult.Data.RegistrationNumber)
+                    ? saveResult.Data.RegistrationNumber
+                    : existingRegistrationNumber;
+
+                if (string.IsNullOrWhiteSpace(storageRegistrationNumber))
+                {
+                    return WcwcApiResponse.CreateError("Registration number not found for document upload", "REGISTRATION_NO_MISSING");
+                }
+
                 var base64Data = Convert.ToBase64String(file.Bytes);
                 var storedFileName = _documentStorageService.UploadDocument(
-                    saveResult.Data.RegistrationNumber,
+                    storageRegistrationNumber,
                     documentCode,
                     new ConsentDocumentDto
                     {
@@ -677,7 +736,55 @@ namespace SmkcApi.Services
 
         private static bool ShouldPersistDocument(WcwcUploadedFile file)
         {
-            return file != null && file.Bytes != null && file.Bytes.Length > 0 && FieldToDocumentCode.ContainsKey(file.FieldName);
+            return file != null
+                && file.Bytes != null
+                && file.Bytes.Length > 0
+                && !string.IsNullOrWhiteSpace(ResolveDocumentCode(file.FieldName));
+        }
+
+        private static string ResolveDocumentCode(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return null;
+            }
+
+            var raw = fieldName.Trim();
+            string code;
+            if (FieldToDocumentCode.TryGetValue(raw, out code))
+            {
+                return code;
+            }
+
+            var compact = raw.Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace(" ", string.Empty);
+
+            if (FieldToDocumentCode.TryGetValue(compact, out code))
+            {
+                return code;
+            }
+
+            switch (compact.ToLowerInvariant())
+            {
+                case "udiddoc":
+                    return "UDID_DOC";
+                case "aadhaardoc":
+                    return "AADHAAR_DOC";
+                case "rationcarddoc":
+                case "rationdoc":
+                    return "RATION_CARD_DOC";
+                case "bankdoc":
+                    return "BANK_DOC";
+                case "photodoc":
+                    return "PHOTO_DOC";
+                case "applicantsignature":
+                    return "APPLICANT_SIGNATURE";
+                case "surveyorsignature":
+                    return "SURVEYOR_SIGNATURE";
+                default:
+                    return null;
+            }
         }
 
         private static HashSet<string> GetExistingDocumentCodes(object data)
@@ -717,9 +824,10 @@ namespace SmkcApi.Services
             var uploadedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var file in files ?? Enumerable.Empty<WcwcUploadedFile>())
             {
-                if (file != null && FieldToDocumentCode.ContainsKey(file.FieldName))
+                var code = file == null ? null : ResolveDocumentCode(file.FieldName);
+                if (!string.IsNullOrWhiteSpace(code))
                 {
-                    uploadedCodes.Add(FieldToDocumentCode[file.FieldName]);
+                    uploadedCodes.Add(code);
                 }
             }
 
@@ -743,7 +851,6 @@ namespace SmkcApi.Services
                 case "AADHAAR_DOC": return "आधारकार्ड";
                 case "RATION_CARD_DOC": return "रेशनकार्ड";
                 case "BANK_DOC": return "बँक खाते झेरॉक्स";
-                case "INCOME_CERTIFICATE_DOC": return "उत्पन्न दाखला / वार्षिक आय प्रमाणपत्र";
                 case "PHOTO_DOC": return "फोटो";
                 case "APPLICANT_SIGNATURE": return "अर्जदाराची सही";
                 default: return documentCode;

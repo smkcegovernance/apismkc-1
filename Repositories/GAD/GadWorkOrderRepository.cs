@@ -2,12 +2,19 @@ using System;
 using System.Collections.Generic;
 using Oracle.ManagedDataAccess.Client;
 using SmkcApi.Models.GAD;
+using SmkcApi.Utils;
 
 namespace SmkcApi.Repositories.GAD
 {
     public class GadWorkOrderRepository : IGadWorkOrderRepository
     {
         private readonly IOracleConnectionFactory _connectionFactory;
+
+        private static string NormalizeDepartmentName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return NetIsmConverter.ConvertIfNeeded(value.Trim());
+        }
 
         private const string SanctionAuthorityTable = "GAD.GADWORKORDERSSANCTIONDET";
         private const string SigningOfficerTable     = "GAD.GADWORKORDERSSUGNINGDET";
@@ -65,7 +72,7 @@ namespace SmkcApi.Repositories.GAD
                             if (!r.Read()) continue;
                             result.NastiFound     = true;
                             result.DeptCode       = Convert.ToInt32(r["DEPT_CODE"]);
-                            result.DeptName       = r["DEPT_NAME"] as string ?? string.Empty;
+                            result.DeptName       = NormalizeDepartmentName(r["DEPT_NAME"] as string ?? string.Empty);
                             result.ProposalName   = r["PROPOSALNAME"] as string ?? string.Empty;
                             result.ProposalAmount = r["PROPOSALAMOUNT"] == DBNull.Value ? 0m : Convert.ToDecimal(r["PROPOSALAMOUNT"]);
                             result.AcSubhead      = r["ACHEAD_CODE"] as string ?? string.Empty;
@@ -503,7 +510,7 @@ namespace SmkcApi.Repositories.GAD
                             SupervisorName           = r["SUPERVISORNAME"].ToString(),
                             WorkOrderDate            = r["WORKORDERDATE"] is DBNull ? DateTime.Today
                                                        : Convert.ToDateTime(r["WORKORDERDATE"]),
-                            DeptName                 = r["DEPT_NAME"].ToString(),
+                            DeptName                 = NormalizeDepartmentName(r["DEPT_NAME"].ToString()),
                             AuthorityName            = r["AUTHORITY_NAME"].ToString(),
                             SigningOfficerName       = r["SIGNING_NAME"].ToString(),
                             SigningOfficerDesignation= r["SIGNING_DESIGNATION"].ToString(),
@@ -601,7 +608,7 @@ namespace SmkcApi.Repositories.GAD
                                 WorkOrderNo          = wo,
                                 WorkOrderDisplayNo   = string.Format("{0}/{1}/{2}", dept, wo, fy),
                                 DeptCode             = dept,
-                                DeptName             = r["DEPT_NAME"].ToString(),
+                                DeptName             = NormalizeDepartmentName(r["DEPT_NAME"].ToString()),
                                 FinYear              = fy,
                                 WorkOrderDate        = r["WORKORDERDATE"] is DBNull ? string.Empty
                                                        : Convert.ToDateTime(r["WORKORDERDATE"]).ToString("dd/MM/yyyy"),

@@ -14,11 +14,15 @@ using SmkcApi.Controllers.VotingStatistics; // for Voting Statistics controller
 using SmkcApi.Repositories.VotingStatistics; // for Voting Statistics repository
 using SmkcApi.Controllers.BudgetBook; // for Budget Book controller
 using SmkcApi.Repositories.BudgetBook; // for Budget Book repository
+using SmkcApi.Controllers.BMT; // for Bill Mapping and Tracking controller
+using SmkcApi.Repositories.BMT; // for Bill Mapping and Tracking repository
 using SmkcApi.Controllers.GAD; // for GAD Work Proposal controller
 using SmkcApi.Repositories.GAD; // for GAD Work Proposal repository
 using SmkcApi.Repositories.UserRights; // for User Rights repository
 using SmkcApi.Repositories.Departments; // for Departments repository
+using SmkcApi.Repositories.CentralEstablishment; // for Central Establishment repository
 using SmkcApi.Controllers.WomenChildWelfare; // for SingleWomenRegistrationController
+using SmkcApi.Controllers.CentralEstablishment; // for Central Establishment controller
 
 namespace SmkcApi.App_Start
 {
@@ -42,12 +46,14 @@ namespace SmkcApi.App_Start
             RegisterWcwcDisability();
             RegisterSingleWomenEmpowerment();
             RegisterBudgetBook();
+            RegisterBillMappingTracking();
             RegisterGadWorkProposals();
             RegisterGadBudgetCap();
             RegisterGadSamaj();
             RegisterGadWorkOrder();
             RegisterUserRights();
             RegisterDepartments();
+            RegisterCentralEstablishment();
         }
 
         /// <summary>
@@ -304,8 +310,12 @@ namespace SmkcApi.App_Start
             var wcwcConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbWcwc");
 
             _factories[typeof(ISWRRepository)] = () => new SWRRepository(wcwcConnFactory);
+            _factories[typeof(IWcwcDocumentStorageService)] = _factories.ContainsKey(typeof(IWcwcDocumentStorageService))
+                ? _factories[typeof(IWcwcDocumentStorageService)]
+                : new Func<object>(() => new WcwcDocumentStorageService());
             _factories[typeof(ISWRService)]    = () => new SWRService(
-                GetService(typeof(ISWRRepository)) as ISWRRepository
+                GetService(typeof(ISWRRepository)) as ISWRRepository,
+                GetService(typeof(IWcwcDocumentStorageService)) as IWcwcDocumentStorageService
             );
             _factories[typeof(SingleWomenRegistrationController)] = () => new SingleWomenRegistrationController(
                 GetService(typeof(ISWRService)) as ISWRService
@@ -323,6 +333,20 @@ namespace SmkcApi.App_Start
             _factories[typeof(IBudgetBookRepository)] = () => new BudgetBookRepository(abasConnFactory);
             _factories[typeof(BudgetBookController)] = () => new BudgetBookController(
                 GetService(typeof(IBudgetBookRepository)) as IBudgetBookRepository
+            );
+        }
+
+        /// <summary>
+        /// Register Bill Mapping and Tracking (BMT) dependencies.
+        /// Uses ABAS schema.
+        /// </summary>
+        private void RegisterBillMappingTracking()
+        {
+            var abasConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDbAbas");
+
+            _factories[typeof(IBillMappingTrackingRepository)] = () => new BillMappingTrackingRepository(abasConnFactory);
+            _factories[typeof(BillMappingTrackingController)] = () => new BillMappingTrackingController(
+                GetService(typeof(IBillMappingTrackingRepository)) as IBillMappingTrackingRepository
             );
         }
 
@@ -394,6 +418,16 @@ namespace SmkcApi.App_Start
             _factories[typeof(IDepartmentsRepository)] = () => new DepartmentsRepository(ulbConnFactory);
             _factories[typeof(DepartmentsController)] = () => new DepartmentsController(
                 GetService(typeof(IDepartmentsRepository)) as IDepartmentsRepository
+            );
+        }
+
+        private void RegisterCentralEstablishment()
+        {
+            var pmsConnFactory = new SmkcApi.Repositories.OracleConnectionFactory("OracleDb");
+
+            _factories[typeof(ICentralEstablishmentRepository)] = () => new CentralEstablishmentRepository(pmsConnFactory);
+            _factories[typeof(CentralEstablishmentController)] = () => new CentralEstablishmentController(
+                GetService(typeof(ICentralEstablishmentRepository)) as ICentralEstablishmentRepository
             );
         }
 

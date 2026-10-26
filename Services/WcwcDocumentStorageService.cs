@@ -11,6 +11,7 @@ namespace SmkcApi.Services
     {
         string UploadDocument(string registrationNumber, string documentCode, ConsentDocumentDto document);
         string DownloadDocument(string fileName, string registrationNumber, string documentCode);
+        string ResolveDocumentFileName(string registrationNumber, string documentCode);
     }
 
     public class WcwcDocumentStorageService : IWcwcDocumentStorageService
@@ -20,20 +21,40 @@ namespace SmkcApi.Services
         private readonly int _port;
         private readonly string _user;
         private readonly string _password;
-        private readonly string _ftpBasePath;
-        private readonly string _networkRootPath;
+        private readonly string _ftpBasePathDisability;
+        private readonly string _ftpBasePathSingleWomen;
+        private readonly string _networkRootPathDisability;
+        private readonly string _networkRootPathSingleWomen;
 
         public WcwcDocumentStorageService()
         {
-            _storageType = System.Configuration.ConfigurationManager.AppSettings["Storage_Type"] ?? "ftp";
+            _storageType = System.Configuration.ConfigurationManager.AppSettings["Wcwc_Storage_Type"]
+                ?? System.Configuration.ConfigurationManager.AppSettings["Storage_Type"]
+                ?? "ftp";
             _host = System.Configuration.ConfigurationManager.AppSettings["Ftp_Host"] ?? "192.168.40.47";
             _port = ParseInt(System.Configuration.ConfigurationManager.AppSettings["Ftp_Port"], 21);
             _user = System.Configuration.ConfigurationManager.AppSettings["Ftp_User"] ?? string.Empty;
             _password = System.Configuration.ConfigurationManager.AppSettings["Ftp_Password"] ?? string.Empty;
-            _ftpBasePath = System.Configuration.ConfigurationManager.AppSettings["Wcwc_Ftp_BasePath"] ?? "/DisabilityRegistrations";
-            _networkRootPath = ResolveNetworkRootPath();
+            _ftpBasePathDisability = (System.Configuration.ConfigurationManager.AppSettings["Wcwc_Disability_Ftp_BasePath"]
+                ?? System.Configuration.ConfigurationManager.AppSettings["Wcwc_Ftp_BasePath"]
+                ?? "/DisabilityRegistrations").TrimEnd('/');
+            _ftpBasePathSingleWomen = (System.Configuration.ConfigurationManager.AppSettings["Wcwc_Swr_Ftp_BasePath"]
+                ?? "/SingleWomenRegistrations").TrimEnd('/');
+            _networkRootPathDisability = ResolveNetworkRootPathForConfig(
+                "Wcwc_Disability_Network_LocalPath",
+                "Wcwc_Disability_Network_Share",
+                System.Configuration.ConfigurationManager.AppSettings["Wcwc_Network_LocalPath"],
+                System.Configuration.ConfigurationManager.AppSettings["Wcwc_Network_Share"],
+                "c$\\inetpub\\ftproot\\DisabilityRegistrations");
+            _networkRootPathSingleWomen = ResolveNetworkRootPathForConfig(
+                "Wcwc_Swr_Network_LocalPath",
+                "Wcwc_Swr_Network_Share",
+                null,
+                null,
+                "c$\\inetpub\\ftproot\\SingleWomenRegistrations");
 
             FtpLogger.Initialize();
+            LogEffectiveConfiguration();
         }
 
         public string UploadDocument(string registrationNumber, string documentCode, ConsentDocumentDto document)
@@ -48,7 +69,7 @@ namespace SmkcApi.Services
                 throw new ArgumentException("registrationNumber and documentCode are required");
             }
 
-            var safeFileName = GenerateStoredFileName(Path.GetFileName(document.FileName));
+            var safeFileName = GenerateStoredFileName(documentCode, Path.GetFileName(document.FileName));
             var fileBytes = DecodeBase64(document.FileData);
 
             if (IsNetworkStorage())
@@ -73,6 +94,18 @@ namespace SmkcApi.Services
             return DownloadFromFtp(fileName, registrationNumber, documentCode);
         }
 
+        public string ResolveDocumentFileName(string registrationNumber, string documentCode)
+        {
+            if (string.IsNullOrWhiteSpace(registrationNumber) || string.IsNullOrWhiteSpace(documentCode))
+            {
+                return null;
+            }
+
+            return IsNetworkStorage()
+                ? ResolveDocumentFileNameFromNetwork(registrationNumber, documentCode)
+                : ResolveDocumentFileNameFromFtp(registrationNumber, documentCode);
+        }
+
         private bool IsNetworkStorage()
         {
             return _storageType.Equals("network", StringComparison.OrdinalIgnoreCase);
@@ -84,22 +117,65 @@ namespace SmkcApi.Services
             return int.TryParse(value, out parsed) ? parsed : fallback;
         }
 
-        private string ResolveNetworkRootPath()
+        private string ResolveNetworkRootPathForConfig(
+            string localPathKey,
+            string shareKey,
+            string legacyLocalOverride,
+            string legacyShare,
+            string defaultShare)
         {
-            var localOverride = System.Configuration.ConfigurationManager.AppSettings["Wcwc_Network_LocalPath"];
+            var localOverride = System.Configuration.ConfigurationManager.AppSettings[localPathKey];
+            if (string.IsNullOrWhiteSpace(localOverride))
+            {
+                localOverride = legacyLocalOverride;
+            }
+
             if (!string.IsNullOrWhiteSpace(localOverride))
             {
                 return localOverride;
             }
 
-            var configuredShare = System.Configuration.ConfigurationManager.AppSettings["Wcwc_Network_Share"];
+            var configuredShare = System.Configuration.ConfigurationManager.AppSettings[shareKey];
             if (string.IsNullOrWhiteSpace(configuredShare))
             {
-                configuredShare = "c$\\inetpub\\ftproot\\DisabilityRegistrations";
+                configuredShare = legacyShare;
+            }
+
+            if (string.IsNullOrWhiteSpace(configuredShare))
+            {
+                configuredShare = defaultShare;
             }
 
             var server = System.Configuration.ConfigurationManager.AppSettings["Network_Server"] ?? "192.168.40.47";
             return BuildUncPath(server, configuredShare);
+        }
+
+        private static bool IsSingleWomenDocument(string documentCode)
+        {
+            return !string.IsNullOrWhiteSpace(documentCode)
+                && documentCode.Trim().StartsWith("SWR_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string ResolveFtpBasePath(string documentCode)
+        {
+            return IsSingleWomenDocument(documentCode) ? _ftpBasePathSingleWomen : _ftpBasePathDisability;
+        }
+
+        private string ResolveNetworkRootPath(string documentCode)
+        {
+            return IsSingleWomenDocument(documentCode) ? _networkRootPathSingleWomen : _networkRootPathDisability;
+        }
+
+        private void LogEffectiveConfiguration()
+        {
+            FtpLogger.LogInfo("=== WCWC Document Storage Configuration ===");
+            FtpLogger.LogInfo("Storage_Type: " + _storageType);
+            FtpLogger.LogInfo(string.Format("FTP Server: ftp://{0}:{1}", _host, _port));
+            FtpLogger.LogInfo("FTP Disability Base Path: " + _ftpBasePathDisability);
+            FtpLogger.LogInfo("FTP Single Women Base Path: " + _ftpBasePathSingleWomen);
+            FtpLogger.LogInfo("Network Disability Root Path: " + _networkRootPathDisability);
+            FtpLogger.LogInfo("Network Single Women Root Path: " + _networkRootPathSingleWomen);
+            FtpLogger.LogInfo("==========================================");
         }
 
         private static string BuildUncPath(string server, string shareValue)
@@ -142,16 +218,23 @@ namespace SmkcApi.Services
             return Convert.FromBase64String(base64Data);
         }
 
-        private static string GenerateStoredFileName(string originalFileName)
+        private static string GenerateStoredFileName(string documentCode, string originalFileName)
         {
             var extension = Path.GetExtension(originalFileName);
+
+            if (IsSingleWomenDocument(documentCode))
+            {
+                // Keep SWR names compact to avoid overflowing OTHER_INFO snapshot limits.
+                return string.Format("{0}{1}", Guid.NewGuid().ToString("N").Substring(0, 12), extension);
+            }
+
             var baseName = Path.GetFileNameWithoutExtension(originalFileName);
             return string.Format("{0}_{1}{2}", Guid.NewGuid().ToString("N"), baseName, extension);
         }
 
         private void UploadToFtp(string registrationNumber, string documentCode, string fileName, byte[] fileBytes)
         {
-            var basePath = _ftpBasePath.TrimEnd('/');
+            var basePath = ResolveFtpBasePath(documentCode).TrimEnd('/');
             var registrationPath = basePath + "/" + registrationNumber;
             var documentPath = registrationPath + "/" + documentCode;
             var filePath = documentPath + "/" + fileName;
@@ -163,7 +246,16 @@ namespace SmkcApi.Services
 
         private string DownloadFromFtp(string fileName, string registrationNumber, string documentCode)
         {
-            var ftpPath = string.Format("{0}/{1}/{2}/{3}", _ftpBasePath.TrimEnd('/'), registrationNumber, documentCode, fileName);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = ResolveDocumentFileNameFromFtp(registrationNumber, documentCode);
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return null;
+                }
+            }
+
+            var ftpPath = string.Format("{0}/{1}/{2}/{3}", ResolveFtpBasePath(documentCode).TrimEnd('/'), registrationNumber, documentCode, fileName);
             var uri = new Uri(string.Format("ftp://{0}:{1}{2}", _host, _port, ftpPath));
 
             try
@@ -248,7 +340,13 @@ namespace SmkcApi.Services
 
         private void UploadToNetwork(string registrationNumber, string documentCode, string fileName, byte[] fileBytes)
         {
-            var registrationDir = Path.Combine(_networkRootPath, registrationNumber);
+            var rootPath = ResolveNetworkRootPath(documentCode);
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                throw new InvalidOperationException("Network root path is not configured for document code: " + documentCode);
+            }
+
+            var registrationDir = Path.Combine(rootPath, registrationNumber);
             var documentDir = Path.Combine(registrationDir, documentCode);
             var filePath = Path.Combine(documentDir, fileName);
 
@@ -280,7 +378,22 @@ namespace SmkcApi.Services
 
         private string DownloadFromNetwork(string fileName, string registrationNumber, string documentCode)
         {
-            var filePath = Path.Combine(_networkRootPath, registrationNumber, documentCode, fileName);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = ResolveDocumentFileNameFromNetwork(registrationNumber, documentCode);
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return null;
+                }
+            }
+
+            var rootPath = ResolveNetworkRootPath(documentCode);
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                return null;
+            }
+
+            var filePath = Path.Combine(rootPath, registrationNumber, documentCode, fileName);
             NetworkCredential credential = null;
 
             try
@@ -305,6 +418,101 @@ namespace SmkcApi.Services
                     credential.Disconnect();
                 }
             }
+        }
+
+        private string ResolveDocumentFileNameFromNetwork(string registrationNumber, string documentCode)
+        {
+            var rootPath = ResolveNetworkRootPath(documentCode);
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                return null;
+            }
+
+            var documentDir = Path.Combine(rootPath, registrationNumber, documentCode);
+            if (!Directory.Exists(documentDir))
+            {
+                return null;
+            }
+
+            var files = Directory.GetFiles(documentDir);
+            if (files == null || files.Length == 0)
+            {
+                return null;
+            }
+
+            string bestPath = null;
+            DateTime bestWrite = DateTime.MinValue;
+            foreach (var path in files)
+            {
+                DateTime writeTime;
+                try
+                {
+                    writeTime = File.GetLastWriteTimeUtc(path);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (bestPath == null || writeTime > bestWrite)
+                {
+                    bestPath = path;
+                    bestWrite = writeTime;
+                }
+            }
+
+            return bestPath == null ? null : Path.GetFileName(bestPath);
+        }
+
+        private string ResolveDocumentFileNameFromFtp(string registrationNumber, string documentCode)
+        {
+            var folderPath = string.Format("{0}/{1}/{2}", ResolveFtpBasePath(documentCode).TrimEnd('/'), registrationNumber, documentCode);
+            var uri = new Uri(string.Format("ftp://{0}:{1}{2}", _host, _port, folderPath));
+
+            try
+            {
+                var request = (FtpWebRequest)WebRequest.Create(uri);
+                request.Method = WebRequestMethods.Ftp.ListDirectory;
+                request.Credentials = new System.Net.NetworkCredential(_user, _password);
+                request.UseBinary = true;
+                request.UsePassive = true;
+                request.KeepAlive = false;
+                request.Timeout = 15000;
+
+                using (var response = (FtpWebResponse)request.GetResponse())
+                using (var stream = response.GetResponseStream())
+                using (var reader = new StreamReader(stream))
+                {
+                    while (!reader.EndOfStream)
+                    {
+                        var line = reader.ReadLine();
+                        if (string.IsNullOrWhiteSpace(line))
+                        {
+                            continue;
+                        }
+
+                        var candidate = line.Trim();
+                        if (candidate == "." || candidate == "..")
+                        {
+                            continue;
+                        }
+
+                        return candidate;
+                    }
+                }
+            }
+            catch (WebException ex)
+            {
+                var ftpResponse = ex.Response as FtpWebResponse;
+                if (ftpResponse != null && ftpResponse.StatusCode == FtpStatusCode.ActionNotTakenFileUnavailable)
+                {
+                    return null;
+                }
+
+                throw;
+            }
+
+            return null;
         }
 
         private class NetworkCredential

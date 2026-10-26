@@ -217,6 +217,72 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Collection",
+      "item": [
+        {
+          "name": "Authorize Collection Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connectionNo\": 123456,\n  \"bookNo\": 10,\n  \"srNo\": 5,\n  \"receiptNo\": 987654,\n  \"totalPaid\": 450.75,\n  \"transactionNo\": 1020304050\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/water/collection/success",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "collection", "success"]
+            },
+            "description": "POST /api/water/collection/success\nAuthorize a successful payment into water collection using stored procedure `online_collauth_website`.\n\nCall this after payment gateway success response is verified."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payment Link",
+      "item": [
+        {
+          "name": "Create Razorpay Payment Link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connection_number\": \"23456\",\n  \"name\": \"Test\",\n  \"contact\": \"9850230475\",\n  \"email\": \"02atul.com@gmail.com\",\n  \"amount\": 1000,\n  \"currency\": \"INR\",\n  \"accept_partial\": true,\n  \"first_min_partial_amount\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/water/payment-link/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "water", "payment-link", "create"]
+            },
+            "description": "POST /api/water/payment-link/create\nCreates a Razorpay payment link for water tax payment.\n\nThis endpoint calls Razorpay Payment Links API and returns the same JSON response as Razorpay."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

@@ -29,11 +29,11 @@ namespace SmkcApi.Models.BudgetBook
         public string AcSubhead { get; set; }
         public string FinYear { get; set; }
         public decimal TotalBudget { get; set; }
-        public decimal EffectiveBudget { get; set; }   // After cap applied
+        public decimal EffectiveBudget { get; set; }   // For compatibility; budget-book remaining uses TotalBudget basis
         public decimal? CapPercentage { get; set; }
         public decimal? CapAmount { get; set; }
         public decimal CommittedAmount { get; set; }
-        public decimal RemainingBudget { get; set; }   // EffectiveBudget - CommittedAmount
+        public decimal RemainingBudget { get; set; }   // TotalBudget - CommittedAmount
     }
 
     // ── Request DTOs ─────────────────────────────────────────────────────────────
@@ -54,6 +54,14 @@ namespace SmkcApi.Models.BudgetBook
     {
         public long BookEntryNo { get; set; }
         public decimal FinalProposedAmount { get; set; }
+        public string EnteredBy { get; set; }
+    }
+
+    public class FinalBudgetRevisionRequest
+    {
+        public long BookEntryNo { get; set; }
+        public decimal RevisedFinalAmount { get; set; }
+        public string RevisionRemark { get; set; }
         public string EnteredBy { get; set; }
     }
 
@@ -82,6 +90,10 @@ namespace SmkcApi.Models.BudgetBook
         public string WorkName { get; set; }
         public long NastiNo { get; set; }
         public string FileType { get; set; }
+        public decimal? PreviousFinalAmount { get; set; }
+        public decimal? RevisedFinalAmount { get; set; }
+        public string RevisionRemark { get; set; }
+        public DateTime? RevisionDate { get; set; }
     }
 
     public class BudgetBookSaveResult
@@ -91,6 +103,9 @@ namespace SmkcApi.Models.BudgetBook
         public long BookEntryNo { get; set; }
         public long FinalBookEntryNo { get; set; }
         public decimal RemainingBudget { get; set; }
+        public decimal PreviousRemainingBudget { get; set; }
+        public decimal PreviousFinalAmount { get; set; }
+        public decimal RevisedFinalAmount { get; set; }
     }
 
     public class BudgetBookListResult

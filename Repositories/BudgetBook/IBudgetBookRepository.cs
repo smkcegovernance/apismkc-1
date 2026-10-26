@@ -12,6 +12,7 @@ namespace SmkcApi.Repositories.BudgetBook
         BudgetBookSaveResult SavePrimaryEntry(int ulbCode, PrimaryBudgetEntryRequest request);
         BudgetBookEntryDto GetPrimaryEntry(int ulbCode, long bookEntryNo);
         BudgetBookSaveResult SaveFinalEntry(int ulbCode, FinalBudgetEntryRequest request);
+        BudgetBookSaveResult ReviseFinalEntry(int ulbCode, FinalBudgetRevisionRequest request);
         IEnumerable<BudgetBookEntryDto> ListEntries(int ulbCode, string finYear, int? deptCode, int pageNo, int pageSize, out int totalCount, string search = null, string status = null);
         BudgetLiabilityReportResult GetLiabilityReport(int ulbCode, DateTime fromDate, DateTime toDate);
         FundWiseBudgetLiabilityReportResult GetFundWiseLiabilityReport(int ulbCode, DateTime fromDate, DateTime toDate);

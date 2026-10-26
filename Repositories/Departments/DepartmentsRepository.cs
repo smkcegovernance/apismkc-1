@@ -2,12 +2,20 @@ using System;
 using System.Collections.Generic;
 using Oracle.ManagedDataAccess.Client;
 using SmkcApi.Models.Departments;
+using SmkcApi.Utils;
 
 namespace SmkcApi.Repositories.Departments
 {
     public class DepartmentsRepository : IDepartmentsRepository
     {
         private readonly IOracleConnectionFactory _connFactory;
+
+        private static string NormalizeDisplayText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var trimmed = value.Trim();
+            return NetIsmConverter.ConvertIfNeeded(trimmed);
+        }
 
         public DepartmentsRepository(IOracleConnectionFactory connFactory)
         {
@@ -51,8 +59,8 @@ namespace SmkcApi.Repositories.Departments
                         {
                             DeptCode     = Convert.ToInt32(rdr.GetValue(0)),
                             RouteKey     = rdr.IsDBNull(1) ? null : rdr.GetString(1),
-                            NameEn       = rdr.IsDBNull(2) ? null : rdr.GetString(2),
-                            NameMr       = rdr.IsDBNull(3) ? null : rdr.GetValue(3)?.ToString(),
+                            NameEn       = rdr.IsDBNull(2) ? null : NormalizeDisplayText(rdr.GetString(2)),
+                            NameMr       = rdr.IsDBNull(3) ? null : NormalizeDisplayText(rdr.GetValue(3)?.ToString()),
                             Icon         = rdr.IsDBNull(4) ? "bi-building"           : rdr.GetString(4),
                             Color        = rdr.IsDBNull(5) ? "#1565C0"               : rdr.GetString(5),
                             ColorBg      = rdr.IsDBNull(6) ? "rgba(21,101,192,0.08)" : rdr.GetString(6),
